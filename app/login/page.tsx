@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -6,43 +7,136 @@ import { createClient } from "@/lib/supabase/client";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 
-export default function LoginPage() {
+function getStrength(pw: string): { level: number; label: string; color: string } {
+  if (pw.length < 8) return { level: 1, label: "Weak", color: "bg-error" };
+  if (pw.length < 12 || !/\d/.test(pw)) return { level: 2, label: "Medium", color: "bg-yellow-400" };
+  return { level: 3, label: "Strong", color: "bg-neon" };
+}
+
+export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [tos, setTos] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
+
   const router = useRouter();
+  const strength = getStrength(password);
+
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (typeof window !== "undefined" ? window.location.origin : "");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) { setError("Please fill in all fields."); return; }
-    setError("");
-    setLoading(true);
-    const supabase = createClient();
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (authError) {
-      setError(authError.message);
-      return;
+
+    try {
+      if (!email || !password || !confirm) {
+        setError("Please fill in all fields.");
+        return;
+      }
+
+      if (password !== confirm) {
+        setError("Passwords do not match.");
+        return;
+      }
+
+      if (password.length < 8) {
+        setError("Password must be at least 8 characters.");
+        return;
+      }
+
+      if (!tos) {
+        setError("Please accept the terms of service.");
+        return;
+      }
+
+      setError("");
+      setLoading(true);
+
+      const supabase = createClient();
+
+      const { data, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${appUrl}/auth/callback`,
+          data: {
+            full_name: email.split("@")[0],
+          },
+        },
+      });
+
+      if (authError) {
+        throw authError;
+      }
+
+      if (data.session) {
+        router.push("/billing");
+        return;
+      }
+
+      setSuccess(true);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    router.push("/dashboard");
   };
 
   const handleGoogle = async () => {
-    const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: window.location.origin + "/auth/callback" },
-    });
+    try {
+      setError("");
+      setLoading(true);
+
+      const supabase = createClient();
+
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${appUrl}/auth/callback`,
+        },
+      });
+
+      if (authError) {
+        throw authError;
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Google sign up failed. Please try again.");
+      setLoading(false);
+    }
   };
 
+  if (success) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center px-4">
+        <div className="w-full max-w-sm text-center">
+          <div className="text-5xl mb-5">✉</div>
+          <h2 className="text-xl font-bold mb-2">Check your email</h2>
+          <p className="text-white/50 text-sm mb-6">
+            We sent a confirmation link to{" "}
+            <strong className="text-white">{email}</strong>
+          </p>
+          <Link href="/login" className="text-primary hover:underline text-sm">
+            Back to login
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-bg flex items-center justify-center px-4">
+    <div className="min-h-screen bg-bg flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
-          <Link href="/" className="text-2xl font-bold text-primary">autom8</Link>
-          <p className="text-white/40 text-sm mt-2">Sign in to your account</p>
+          <Link href="/" className="text-2xl font-bold text-primary">
+            autom8
+          </Link>
+          <p className="text-white/40 text-sm mt-2">Create your free account</p>
         </div>
 
         <div className="bg-surface border border-white/5 rounded-2xl p-8">
@@ -61,21 +155,72 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
             />
-            <Input
-              label="Password"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-            <div className="flex justify-end">
-              <Link href="/forgot-password" className="text-xs text-white/40 hover:text-primary transition-colors">
-                Forgot password?
-              </Link>
+
+            <div>
+              <Input
+                label="Password"
+                type="password"
+                placeholder="Min. 8 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+
+              {password && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex gap-1">
+                    {[1, 2, 3].map((l) => (
+                      <div
+                        key={l}
+                        className={`h-1 flex-1 rounded-full transition-all ${
+                          l <= strength.level ? strength.color : "bg-white/10"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-white/40">
+                    {strength.label} password
+                  </p>
+                </div>
+              )}
             </div>
-            <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full">
-              Sign In
+
+            <Input
+              label="Confirm Password"
+              type="password"
+              placeholder="Repeat password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+            />
+
+            <label className="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={tos}
+                onChange={(e) => setTos(e.target.checked)}
+                className="mt-0.5 accent-primary"
+              />
+              <span className="text-xs text-white/50 group-hover:text-white/70 transition-colors">
+                I agree to the{" "}
+                <Link href="/terms" className="text-primary hover:underline">
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link href="/privacy" className="text-primary hover:underline">
+                  Privacy Policy
+                </Link>
+              </span>
+            </label>
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              loading={loading}
+              className="w-full"
+            >
+              Create Account
             </Button>
           </form>
 
@@ -88,21 +233,36 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={handleGoogle}
-            className="w-full flex items-center justify-center gap-3 border border-white/10 hover:border-white/20 rounded-lg px-4 py-2.5 text-sm text-white/70 hover:text-white transition-all"
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 border border-white/10 hover:border-white/20 rounded-lg px-4 py-2.5 text-sm text-white/70 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
             </svg>
-            Continue with Google
+            Sign up with Google
           </button>
         </div>
 
         <p className="text-center text-sm text-white/40 mt-5">
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" className="text-primary hover:underline">Sign up</Link>
+          Already have an account?{" "}
+          <Link href="/login" className="text-primary hover:underline">
+            Log in
+          </Link>
         </p>
       </div>
     </div>
