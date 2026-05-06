@@ -19,7 +19,7 @@ interface TextareaBlockProps extends BaseProps, TextareaHTMLAttributes<HTMLTextA
 type Props = InputBlockProps | TextareaBlockProps;
 
 const baseInputClasses =
-  "w-full bg-surface border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder-text-muted outline-none transition-all focus:border-primary/50 focus:shadow-[0_0_0_2px_rgba(57,255,20,0.08)]";
+  "w-full bg-surface border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder-text-muted outline-none transition-all focus:border-primary/50 focus:shadow-[0_0_0_2px_rgba(123,63,242,0.08)]";
 
 export default function InputBlock(props: Props) {
   // Destructure multiline and rows before spreading so they never reach the DOM

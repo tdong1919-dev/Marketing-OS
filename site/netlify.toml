@@ -1,0 +1,36 @@
+# Netlify — pure static deploy (no framework, no build step)
+# Drag this folder onto https://app.netlify.com/drop
+
+[build]
+  publish = "."
+  command = ""
+  ignore = "exit 0"
+
+# Disable framework auto-detection
+[build.environment]
+  NETLIFY_NEXT_PLUGIN_SKIP = "true"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# SPA-style fallback (harmless for this static site)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -74,7 +74,7 @@ export default function MessageCard({
         onClick={() => onSelect?.(message)}
         className={`w-full text-left p-4 rounded-xl border transition-all duration-150
           ${isSelected
-            ? "border-primary/40 bg-primary/5 shadow-[0_0_16px_rgba(57,255,20,0.08)]"
+            ? "border-primary/40 bg-primary/5 shadow-[0_0_16px_rgba(123,63,242,0.08)]"
             : "border-border bg-surface hover:border-border/80 hover:bg-surface-elevated"
           }`}
       >
@@ -94,7 +94,7 @@ export default function MessageCard({
   return (
     <div className={`rounded-2xl border transition-all duration-200
       ${isSelected
-        ? "border-primary/40 bg-primary/5 shadow-[0_0_20px_rgba(57,255,20,0.1)]"
+        ? "border-primary/40 bg-primary/5 shadow-[0_0_20px_rgba(123,63,242,0.1)]"
         : "border-border bg-surface-elevated"
       }`}
     >

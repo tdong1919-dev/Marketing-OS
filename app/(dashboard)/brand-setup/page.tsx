@@ -8,6 +8,38 @@ import Button from "@/components/ui/Button";
 import TagInput from "@/components/ui/TagInput";
 import { mockBrandProfile } from "@/lib/mock-data";
 
+function ConnectButton() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleConnect = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/social/connect", { method: "POST" });
+      const data = await res.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        setError(data.error ?? "Failed to connect.");
+        setLoading(false);
+      }
+    } catch {
+      setError("Network error. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 text-right">
+      <Button variant="primary" onClick={handleConnect} loading={loading}>
+        {loading ? "Redirecting…" : "Connect →"}
+      </Button>
+      {error && <p className="text-[11px] text-error mt-1">{error}</p>}
+    </div>
+  );
+}
+
 const industryOptions = [
   { value: "", label: "Select industry..." },
   { value: "medspa", label: "Medical Spa" },
@@ -208,14 +240,14 @@ export default function BrandSetupPage() {
         />
       </Card>
 
-      {/* Connect Instagram */}
-      <Card className="border-dashed border-white/10">
-        <div className="flex items-center justify-between">
+      {/* Connect Facebook & Instagram */}
+      <Card className="border-dashed border-primary/20">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <h3 className="font-medium mb-1">Connect Instagram</h3>
-            <p className="text-sm text-white/40">Link your Instagram account to start automating replies.</p>
+            <h3 className="font-medium mb-1 text-text-primary">Connect Facebook & Instagram</h3>
+            <p className="text-sm text-text-muted">Link your Meta Business account to start automating replies.</p>
           </div>
-          <Button variant="secondary" onClick={() => alert("Instagram connection coming soon! Configure Meta OAuth credentials to enable.")}>Connect →</Button>
+          <ConnectButton />
         </div>
       </Card>
     </div>

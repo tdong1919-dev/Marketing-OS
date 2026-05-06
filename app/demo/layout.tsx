@@ -1,80 +1,59 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const navItems = [
   {
-    href: "/dashboard",
+    href: "/demo/dashboard",
     label: "Dashboard",
     icon: (
-      <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
       </svg>
     ),
   },
   {
-    href: "/inbox",
+    href: "/demo/inbox",
     label: "Inbox",
     badge: "12",
     icon: (
-      <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
       </svg>
     ),
   },
   {
-    href: "/analytics",
+    href: "/demo/analytics",
     label: "Analytics",
     icon: (
-      <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
       </svg>
     ),
   },
   {
-    href: "/settings",
+    href: "/demo/settings",
     label: "Brand Brain",
     icon: (
-      <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
       </svg>
     ),
   },
   {
-    href: "/billing",
-    label: "Billing",
-    icon: (
-      <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-      </svg>
-    ),
-  },
-  {
-    href: "/scheduler",
+    href: "/demo/scheduler",
     label: "Scheduler",
     soon: true,
     icon: (
-      <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
     ),
   },
 ];
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ReactNode;
-  badge?: string;
-  soon?: boolean;
-}
-
-interface SidebarProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-export default function Sidebar({ isOpen, onClose }: SidebarProps) {
+function DemoSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const pathname = usePathname();
 
   return (
@@ -82,12 +61,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       {isOpen && (
         <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm" onClick={onClose} />
       )}
-
       <aside
         className={`fixed top-0 left-0 h-full w-56 bg-surface border-r border-border z-40 flex flex-col transition-transform duration-200
           ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:static md:z-auto shrink-0`}
       >
-        {/* Logo */}
         <div className="px-5 py-5 border-b border-border flex items-center justify-between">
           <div>
             <span className="text-lg font-bold text-primary tracking-tight glow-text">autom8</span>
@@ -98,9 +75,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           </button>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {(navItems as NavItem[]).map((item) => {
+          {navItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <Link
@@ -122,7 +98,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                     {item.badge}
                   </span>
                 )}
-                {item.soon && !item.badge && (
+                {(item as { soon?: boolean }).soon && !item.badge && (
                   <span className="text-[9px] font-bold bg-accent-purple/20 text-accent-purple px-1.5 py-0.5 rounded-full">SOON</span>
                 )}
                 {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full shadow-[0_0_8px_rgba(123,63,242,0.6)]" />}
@@ -138,7 +114,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             The biggest library of AI tools &amp; automation — with live human support.
           </p>
           <Link
-            href="/scheduler"
+            href="/demo/scheduler"
             onClick={onClose}
             className="block text-center text-[11px] font-semibold bg-primary text-white rounded-lg py-1.5 hover:opacity-90 transition-opacity"
           >
@@ -146,17 +122,80 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           </Link>
         </div>
 
-        {/* Bottom user area */}
         <div className="px-4 py-4 border-t border-border">
-          <Link href="/onboarding" className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-surface-elevated transition-colors group">
+          <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center text-white text-xs font-bold shrink-0">D</div>
             <div className="min-w-0">
               <p className="text-xs font-medium text-text-primary truncate">Demo User</p>
-              <p className="text-[10px] text-text-muted truncate">Starter Plan</p>
+              <p className="text-[10px] text-text-muted truncate">Growth Plan</p>
             </div>
-          </Link>
+          </div>
         </div>
       </aside>
     </>
+  );
+}
+
+function DemoTopNav({ onMenuClick }: { onMenuClick: () => void }) {
+  return (
+    <header className="h-14 bg-charcoal border-b border-white/5 flex items-center justify-between px-4 md:px-6 sticky top-0 z-20">
+      <button
+        onClick={onMenuClick}
+        className="md:hidden text-white/60 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+        aria-label="Toggle menu"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      <div className="hidden md:block" />
+
+      <div className="flex items-center gap-3">
+        <Link
+          href="/signup"
+          className="text-xs font-semibold bg-primary text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-opacity shadow-[0_0_12px_rgba(123,63,242,0.3)]"
+        >
+          Start Free Trial →
+        </Link>
+        <div className="w-8 h-8 rounded-full bg-brand-purple flex items-center justify-center text-white text-xs font-bold">
+          D
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export default function DemoLayout({ children }: { children: React.ReactNode }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  return (
+    <div className="flex flex-col h-screen bg-bg overflow-hidden">
+      {/* Demo banner */}
+      <div className="bg-primary/10 border-b border-primary/20 px-4 py-2 flex items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-primary text-sm">👀</span>
+          <p className="text-xs text-primary font-medium truncate">
+            You&apos;re in demo mode — all data is simulated. No login required.
+          </p>
+        </div>
+        <Link
+          href="/signup"
+          className="shrink-0 text-xs font-semibold text-white bg-primary px-3 py-1 rounded-lg hover:opacity-90 transition-opacity"
+        >
+          Start free →
+        </Link>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        <DemoSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <DemoTopNav onMenuClick={() => setSidebarOpen(true)} />
+          <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
+            {children}
+          </main>
+        </div>
+      </div>
+    </div>
   );
 }

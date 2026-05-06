@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@/lib/supabase/server'
-import type { SubscriptionPlan } from '@/lib/types/database'
 
 // Lazily instantiated so missing env vars don't crash at build time
 function getStripe() {
@@ -58,7 +57,7 @@ export async function POST(request: NextRequest) {
     customer: sub?.stripe_customer_id ?? undefined,
     customer_email: sub?.stripe_customer_id ? undefined : user.email ?? undefined,
     line_items: [{ price: config.priceId, quantity: 1 }],
-    success_url: `${appUrl}/billing?success=true`,
+    success_url: `${appUrl}/onboarding?paid=1`,
     cancel_url:  `${appUrl}/billing?cancelled=true`,
     metadata: {
       user_id:     user.id,

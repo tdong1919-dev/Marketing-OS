@@ -14,7 +14,7 @@ export default function Card({ children, header, footer, className = "", glow, g
     <div
       className={`rounded-2xl border border-border
         ${glass ? "glass" : "bg-surface-elevated"}
-        ${glow ? "shadow-[0_0_20px_rgba(57,255,20,0.08)] hover:shadow-[0_0_28px_rgba(57,255,20,0.15)] transition-shadow duration-300" : ""}
+        ${glow ? "shadow-[0_0_20px_rgba(123,63,242,0.08)] hover:shadow-[0_0_28px_rgba(123,63,242,0.15)] transition-shadow duration-300" : ""}
         ${className}`}
     >
       {header && <div className="px-5 py-4 border-b border-border">{header}</div>}

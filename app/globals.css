@@ -7,11 +7,11 @@
   --color-surface-elevated: #1A1A1A;
   --color-border: #262626;
 
-  /* Brand accents */
-  --color-primary: #39FF14;
-  --color-primary-glow: rgba(57,255,20,0.4);
-  --color-accent-purple: #833ab4;
-  --color-accent-pink: #fd1d1d;
+  /* Brand accents — pink-to-purple gradient system */
+  --color-primary: #7b3ff2;
+  --color-primary-glow: rgba(123,63,242,0.4);
+  --color-accent-purple: #7b3ff2;
+  --color-accent-pink: #f857a6;
 
   /* Text */
   --color-text-primary: #FFFFFF;
@@ -25,9 +25,9 @@
 
   /* Legacy aliases kept for backward compat */
   --color-charcoal: #0A0A0A;
-  --color-brand-purple: #833ab4;
-  --color-brand-pink: #fd1d1d;
-  --color-neon: #39FF14;
+  --color-brand-purple: #7b3ff2;
+  --color-brand-pink: #f857a6;
+  --color-neon: #7b3ff2;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
@@ -35,6 +35,7 @@
 :root {
   --background: #0A0A0A;
   --foreground: #FFFFFF;
+  --gradient-brand: linear-gradient(135deg, #f857a6, #7b3ff2);
 }
 
 * { box-sizing: border-box; }
@@ -52,15 +53,24 @@ body {
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #262626; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #39FF14; }
+::-webkit-scrollbar-thumb:hover { background: #7b3ff2; }
 
 /* Selection */
-::selection { background: rgba(57,255,20,0.2); color: #fff; }
+::selection { background: rgba(123,63,242,0.25); color: #fff; }
 
-/* Neon glow utility */
-.glow { box-shadow: 0 0 20px rgba(57,255,20,0.15); }
-.glow-hover:hover { box-shadow: 0 0 25px rgba(57,255,20,0.3); }
-.glow-text { text-shadow: 0 0 12px rgba(57,255,20,0.6); }
+/* Gradient brand utilities */
+.bg-gradient-brand { background: var(--gradient-brand); }
+.text-gradient-brand {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow utilities */
+.glow { box-shadow: 0 0 20px rgba(123,63,242,0.2); }
+.glow-hover:hover { box-shadow: 0 0 25px rgba(123,63,242,0.35); }
+.glow-text { text-shadow: 0 0 12px rgba(248,87,166,0.5); }
 
 /* Glass effect */
 .glass {

@@ -46,9 +46,9 @@ export default function SignupPage() {
       setError(authError.message);
       return;
     }
-    // Email confirmation disabled: session returned immediately → go straight to onboarding
+    // Email confirmation disabled: session returned immediately → pick a plan first
     if (data.session) {
-      router.push("/onboarding");
+      router.push("/billing");
       return;
     }
     // Email confirmation enabled: ask user to check inbox

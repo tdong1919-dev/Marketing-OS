@@ -2,7 +2,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const navItems = [
+interface MobileNavItem {
+  href: string;
+  label: string;
+  soon?: boolean;
+  icon: (active: boolean) => React.ReactNode;
+}
+
+const navItems: MobileNavItem[] = [
   {
     href: "/dashboard",
     label: "Dashboard",
@@ -30,6 +37,16 @@ const navItems = [
       </svg>
     ),
   },
+  {
+    href: "/scheduler",
+    label: "Scheduler",
+    soon: true,
+    icon: (active: boolean) => (
+      <svg className={`w-5 h-5 ${active ? "text-primary" : "text-text-muted"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={active ? 2.5 : 2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
 ];
 
 export default function MobileBottomNav() {
@@ -49,9 +66,10 @@ export default function MobileBottomNav() {
               {item.icon(active)}
               <span className={`text-[10px] font-medium transition-colors ${active ? "text-primary" : "text-text-muted"}`}>
                 {item.label}
+                {item.soon && <span className="ml-0.5 text-[8px] text-accent-purple align-super">✦</span>}
               </span>
               {active && (
-                <span className="absolute bottom-0 w-8 h-0.5 bg-primary rounded-t-full shadow-[0_0_8px_rgba(57,255,20,0.6)]" />
+                <span className="absolute bottom-0 w-8 h-0.5 bg-primary rounded-t-full shadow-[0_0_8px_rgba(123,63,242,0.6)]" />
               )}
             </Link>
           );

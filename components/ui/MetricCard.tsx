@@ -17,7 +17,7 @@ export default function MetricCard({
     <div
       className={`rounded-2xl border p-5 flex flex-col gap-3 transition-all duration-200
         ${highlight
-          ? "border-primary/30 bg-primary/5 shadow-[0_0_20px_rgba(57,255,20,0.08)]"
+          ? "border-primary/30 bg-primary/5 shadow-[0_0_20px_rgba(123,63,242,0.08)]"
           : "border-border bg-surface-elevated hover:border-border/80"
         } ${className}`}
     >

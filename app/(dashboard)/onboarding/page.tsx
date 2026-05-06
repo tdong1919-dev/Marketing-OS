@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Button from "@/components/ui/Button";
 import InputBlock from "@/components/ui/InputBlock";
 import Toggle from "@/components/ui/Toggle";
@@ -16,14 +16,18 @@ const STEPS = [
 const toneOptions = ["Friendly", "Professional", "Playful", "Authoritative", "Luxe", "Bold", "Warm"];
 const ctaOptions = ["Book Now", "DM Us", "Link in Bio", "Get Quote", "Shop Now", "Book a Call", "Claim Offer"];
 
-export default function OnboardingPage() {
+function OnboardingContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const justPaid = searchParams.get("paid") === "1";
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
   // Step 1
   const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState("");
 
   // Step 2
   const [businessName, setBusinessName] = useState("");
@@ -59,6 +63,24 @@ export default function OnboardingPage() {
   const toggleCta = (cta: string) =>
     setSelectedCtas((p) => p.includes(cta) ? p.filter((c) => c !== cta) : [...p, cta]);
 
+  const handleConnect = async () => {
+    setConnecting(true);
+    setConnectError("");
+    try {
+      const res = await fetch("/api/social/connect", { method: "POST" });
+      const data = await res.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        setConnectError(data.error ?? "Failed to start connection. Please try again.");
+        setConnecting(false);
+      }
+    } catch {
+      setConnectError("Network error. Please try again.");
+      setConnecting(false);
+    }
+  };
+
   const canAdvance = () => {
     if (step === 2) return businessName.trim().length > 0;
     return true;
@@ -92,6 +114,14 @@ export default function OnboardingPage() {
         <span className="text-2xl font-black tracking-tight text-primary glow-text">Autom8</span>
       </div>
 
+      {/* Payment success banner */}
+      {justPaid && (
+        <div className="w-full max-w-lg mb-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3 flex items-center gap-3">
+          <span className="text-emerald-400 text-lg">✓</span>
+          <p className="text-sm text-emerald-300 font-medium">Payment successful — let's get you set up!</p>
+        </div>
+      )}
+
       {/* Progress bar */}
       <div className="w-full max-w-lg mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -101,7 +131,7 @@ export default function OnboardingPage() {
                 <div
                   className={`w-9 h-9 rounded-full flex items-center justify-center text-base font-bold border-2 transition-all
                     ${step > s.id
-                      ? "bg-primary border-primary text-bg shadow-[0_0_12px_rgba(57,255,20,0.4)]"
+                      ? "bg-primary border-primary text-bg shadow-[0_0_12px_rgba(123,63,242,0.4)]"
                       : step === s.id
                       ? "bg-primary/10 border-primary text-primary"
                       : "bg-surface-elevated border-border text-text-muted"
@@ -114,7 +144,7 @@ export default function OnboardingPage() {
                 </span>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`flex-1 h-0.5 mx-2 mb-4 rounded-full transition-all ${step > s.id ? "bg-primary shadow-[0_0_6px_rgba(57,255,20,0.4)]" : "bg-border"}`} />
+                <div className={`flex-1 h-0.5 mx-2 mb-4 rounded-full transition-all ${step > s.id ? "bg-primary shadow-[0_0_6px_rgba(123,63,242,0.4)]" : "bg-border"}`} />
               )}
             </div>
           ))}
@@ -132,17 +162,36 @@ export default function OnboardingPage() {
               <p className="text-sm text-text-secondary mt-1">Link your account so Autom8 can monitor and reply to comments.</p>
             </div>
 
+            {/* Requirement notice */}
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 flex items-start gap-3">
+              <span className="text-amber-400 text-base mt-0.5">⚠️</span>
+              <div>
+                <p className="text-xs font-semibold text-amber-300 mb-0.5">Professional or Business account required</p>
+                <p className="text-xs text-amber-200/70">Autom8 only works with Instagram <strong>Professional</strong> or <strong>Business</strong> accounts connected to a Facebook Page. Personal accounts are not supported by Meta's API.</p>
+              </div>
+            </div>
+
             {!connected ? (
-              <button
-                onClick={() => setConnected(true)}
-                className="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 border-dashed border-border hover:border-primary/40 hover:bg-primary/3 transition-all group"
-              >
-                <span className="text-3xl">📱</span>
-                <div className="text-left">
-                  <p className="text-sm font-semibold text-text-primary group-hover:text-white">Connect Instagram Business Account</p>
-                  <p className="text-xs text-text-muted">Tap to authorize via Meta Login</p>
-                </div>
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={handleConnect}
+                  disabled={connecting}
+                  className="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 border-dashed border-border hover:border-primary/40 hover:bg-primary/3 transition-all group disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <span className="text-3xl">{connecting ? "⏳" : "📱"}</span>
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-text-primary group-hover:text-white">
+                      {connecting ? "Redirecting to Facebook…" : "Connect Facebook & Instagram Business"}
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      {connecting ? "Please wait" : "Authorize via Meta Login — takes 30 seconds"}
+                    </p>
+                  </div>
+                </button>
+                {connectError && (
+                  <p className="text-xs text-error text-center">{connectError}</p>
+                )}
+              </div>
             ) : (
               <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center text-white text-lg shrink-0">📷</div>
@@ -155,15 +204,20 @@ export default function OnboardingPage() {
             )}
 
             <div className="rounded-xl bg-surface border border-border p-4">
-              <p className="text-xs font-medium text-text-secondary mb-2">What Autom8 can access:</p>
+              <p className="text-xs font-medium text-text-secondary mb-2">What Autom8 accesses via Meta:</p>
               <ul className="space-y-1.5">
-                {["Read comments on your posts", "Post replies to comments", "View post engagement metrics"].map((item) => (
+                {[
+                  "Your Facebook Pages & Business info",
+                  "Instagram Basic profile & comments",
+                  "Read & reply to post comments",
+                  "Manage Page engagement & metadata",
+                ].map((item) => (
                   <li key={item} className="flex items-center gap-2 text-xs text-text-muted">
                     <span className="text-primary text-[10px]">✓</span> {item}
                   </li>
                 ))}
               </ul>
-              <p className="text-[10px] text-text-muted mt-3">We never post on your behalf without your approval.</p>
+              <p className="text-[10px] text-text-muted mt-3">We never post on your behalf without your approval. Tokens are stored securely by our automation layer.</p>
             </div>
           </div>
         )}
@@ -203,7 +257,7 @@ export default function OnboardingPage() {
                     onClick={() => toggleTone(tone)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all
                       ${tones.includes(tone)
-                        ? "bg-primary/10 border-primary/30 text-primary shadow-[0_0_10px_rgba(57,255,20,0.08)]"
+                        ? "bg-primary/10 border-primary/30 text-primary shadow-[0_0_10px_rgba(123,63,242,0.08)]"
                         : "bg-surface border border-border text-text-secondary hover:border-primary/20 hover:text-text-primary"
                       }`}
                   >
@@ -335,7 +389,7 @@ export default function OnboardingPage() {
             <button
               onClick={handleFinish}
               disabled={saving}
-              className="w-full py-4 rounded-2xl bg-primary text-bg font-black text-base tracking-tight hover:brightness-110 transition-all shadow-[0_0_24px_rgba(57,255,20,0.3)] hover:shadow-[0_0_36px_rgba(57,255,20,0.5)] disabled:opacity-60"
+              className="w-full py-4 rounded-2xl bg-primary text-bg font-black text-base tracking-tight hover:brightness-110 transition-all shadow-[0_0_24px_rgba(123,63,242,0.3)] hover:shadow-[0_0_36px_rgba(123,63,242,0.5)] disabled:opacity-60"
             >
               {saving ? "Saving…" : "Activate Autom8 ⚡"}
             </button>
@@ -390,5 +444,13 @@ export default function OnboardingPage() {
         </button>
       </p>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-bg flex items-center justify-center"><span className="text-text-muted text-sm">Loading…</span></div>}>
+      <OnboardingContent />
+    </Suspense>
   );
 }

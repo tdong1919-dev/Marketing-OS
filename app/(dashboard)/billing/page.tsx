@@ -133,14 +133,14 @@ const ADD_ONS = [
 // ─── Component ─────────────────────────────────────────────────────────── //
 
 function BillingContent() {
-  const router = useRouter();
+  const _router = useRouter();
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
   const cancelled = searchParams.get("cancelled");
 
   const [currentPlan, setCurrentPlan] = useState<string>("starter");
   const [hasCustomer, setHasCustomer] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [_isPending, _startTransition] = useTransition();
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"individual" | "agency">("individual");
@@ -172,7 +172,7 @@ function BillingContent() {
       });
       const data = await res.json();
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
       } else {
         alert(data.error ?? "Something went wrong. Please try again.");
       }
@@ -189,7 +189,7 @@ function BillingContent() {
       const res = await fetch("/api/billing/portal", { method: "POST" });
       const data = await res.json();
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
       } else {
         alert(data.error ?? "Could not open billing portal.");
       }

@@ -1,11 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Toggle from "@/components/ui/Toggle";
 import InputBlock from "@/components/ui/InputBlock";
 import PageHeader from "@/components/ui/PageHeader";
-import { getBrandProfile, upsertBrandProfile } from "@/lib/actions/brand";
+import { mockBrandProfile } from "@/lib/mock-data";
 
 const toneOptions = ["Friendly", "Professional", "Playful", "Authoritative", "Luxe", "Bold", "Warm"];
 const ctaOptions = ["Book Now", "DM Us", "Link in Bio", "Get Quote", "Shop Now", "Book a Call", "Claim Offer"];
@@ -13,28 +13,13 @@ const escalationExamples = ["refund request", "medical advice", "legal issue", "
 
 type Section = "tone" | "offers" | "automation" | "risk";
 
-const defaultBrand = {
-  businessName: "",
-  industry: "",
-  websiteUrl: "",
-  description: "",
-  tones: [] as string[],
-  customToneNotes: "",
-  services: [] as { name: string; priceRange: string }[],
-  ctaKeywords: [] as string[],
-  escalationRules: "",
-  emojiAllowed: true,
-  formalityLevel: 50,
-  allowedCtas: [] as string[],
-};
-
-export default function BrandBrainPage() {
-  const [brand, setBrand] = useState(defaultBrand);
+export default function DemoSettingsPage() {
+  const [brand, setBrand] = useState({
+    ...mockBrandProfile,
+    allowedCtas: ["Book Now", "DM Us"] as string[],
+  });
   const [activeSection, setActiveSection] = useState<Section>("tone");
   const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [loadingProfile, setLoadingProfile] = useState(true);
 
   // Automation settings
   const [commentLogic, setCommentLogic] = useState(true);
@@ -43,62 +28,11 @@ export default function BrandBrainPage() {
   const [triggerKeywords, setTriggerKeywords] = useState(["price", "book", "available", "how much"]);
   const [escalationKeywords, setEscalationKeywords] = useState(["refund", "complaint", "lawyer", "medical"]);
 
-  useEffect(() => {
-    getBrandProfile()
-      .then((profile) => {
-        if (profile) {
-          setBrand({
-            businessName: profile.business_name ?? "",
-            industry: profile.industry ?? "",
-            websiteUrl: profile.website_url ?? "",
-            description: profile.description ?? "",
-            tones: profile.tone ?? [],
-            customToneNotes: profile.tone_notes ?? "",
-            services: (profile.services ?? []).map((s) => ({
-              name: s.service_name,
-              priceRange: s.price_range ?? "",
-            })),
-            ctaKeywords: profile.cta_keywords ?? [],
-            escalationRules: profile.escalation_rules ?? "",
-            emojiAllowed: profile.emoji_allowed ?? true,
-            formalityLevel: profile.formality_level ?? 50,
-            allowedCtas: [],
-          });
-        }
-      })
-      .catch(() => {
-        // If unauthorized or error, leave defaults
-      })
-      .finally(() => setLoadingProfile(false));
-  }, []);
-
   const set = (key: string, value: unknown) => setBrand((p) => ({ ...p, [key]: value }));
 
   const handleSave = async () => {
-    setSaving(true);
-    setSaveError("");
-    try {
-      await upsertBrandProfile({
-        business_name: brand.businessName,
-        description: brand.description || null,
-        tone: brand.tones,
-        tone_notes: brand.customToneNotes || null,
-        cta_keywords: brand.ctaKeywords,
-        escalation_rules: brand.escalationRules || null,
-        emoji_allowed: brand.emojiAllowed,
-        formality_level: brand.formalityLevel,
-        services: brand.services.map((s) => ({
-          service_name: s.name,
-          price_range: s.priceRange || null,
-        })),
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
   };
 
   const toggleTone = (tone: string) => {
@@ -109,8 +43,9 @@ export default function BrandBrainPage() {
   };
 
   const toggleCta = (cta: string) => {
-    const ctaArr = (brand as Record<string, unknown>).allowedCtas as string[] ?? [];
-    const next = ctaArr.includes(cta) ? ctaArr.filter((c) => c !== cta) : [...ctaArr, cta];
+    const next = brand.allowedCtas.includes(cta)
+      ? brand.allowedCtas.filter((c) => c !== cta)
+      : [...brand.allowedCtas, cta];
     setBrand((p) => ({ ...p, allowedCtas: next }));
   };
 
@@ -121,14 +56,6 @@ export default function BrandBrainPage() {
     { id: "risk", label: "Risk Control", icon: "🛡" },
   ];
 
-  if (loadingProfile) {
-    return (
-      <div className="p-5 md:p-7 max-w-3xl mx-auto flex items-center justify-center h-48">
-        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div className="p-5 md:p-7 max-w-3xl mx-auto space-y-5">
       <PageHeader
@@ -137,8 +64,7 @@ export default function BrandBrainPage() {
         actions={
           <div className="flex items-center gap-2">
             {saved && <span className="text-xs text-primary">✓ Saved</span>}
-            {saveError && <span className="text-xs text-error">{saveError}</span>}
-            <Button variant="primary" onClick={handleSave} loading={saving}>Save Changes</Button>
+            <Button variant="primary" onClick={handleSave}>Save Changes</Button>
           </div>
         }
       />
@@ -178,7 +104,6 @@ export default function BrandBrainPage() {
                 rows={3}
                 helperText="Help the AI understand what you do and who you serve."
               />
-
               <div>
                 <p className="text-sm font-medium text-text-secondary mb-2">Select Tones</p>
                 <div className="flex flex-wrap gap-2">
@@ -198,7 +123,6 @@ export default function BrandBrainPage() {
                   ))}
                 </div>
               </div>
-
               <InputBlock
                 label="Custom Tone Notes"
                 multiline
@@ -207,7 +131,6 @@ export default function BrandBrainPage() {
                 rows={2}
                 helperText="e.g. 'Never use slang. Always end replies with a question or CTA.'"
               />
-
               <div className="grid sm:grid-cols-2 gap-4">
                 <Toggle
                   label="Allow Emojis"
@@ -216,7 +139,6 @@ export default function BrandBrainPage() {
                   onChange={(v) => set("emojiAllowed", v)}
                 />
               </div>
-
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-text-secondary">Formality Level</p>
@@ -241,17 +163,13 @@ export default function BrandBrainPage() {
           <Card header={<h2 className="font-semibold text-text-primary">Example Responses Preview</h2>}>
             <div className="space-y-3">
               {[
-                { comment: "How much does this cost?", reply: "Our prices start at $149! Want me to send you the full menu? 😊" },
+                { comment: "How much does this cost?", reply: "Our HydraFacials start at $149! Want me to send you the full menu? 💜" },
                 { comment: "Do you have availability this week?", reply: "Yes! We have openings Tuesday–Friday. What time works best for you?" },
               ].map((ex, i) => (
                 <div key={i} className="rounded-xl border border-border bg-surface p-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Comment</span>
-                  </div>
+                  <span className="text-[10px] text-text-muted uppercase tracking-wider">Comment</span>
                   <p className="text-xs text-text-primary">{ex.comment}</p>
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[10px] text-primary uppercase tracking-wider">AI Reply</span>
-                  </div>
+                  <span className="text-[10px] text-primary uppercase tracking-wider block pt-1">AI Reply</span>
                   <p className="text-xs text-text-primary">{ex.reply}</p>
                 </div>
               ))}
@@ -266,27 +184,22 @@ export default function BrandBrainPage() {
           <Card header={<h2 className="font-semibold text-text-primary">Active CTAs</h2>}>
             <p className="text-xs text-text-muted mb-3">Select the calls-to-action the AI can use in replies.</p>
             <div className="flex flex-wrap gap-2 mb-4">
-              {ctaOptions.map((cta) => {
-                const ctaArr = (brand as Record<string, unknown>).allowedCtas as string[] ?? [];
-                const active = ctaArr.includes(cta);
-                return (
-                  <button
-                    key={cta}
-                    type="button"
-                    onClick={() => toggleCta(cta)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all
-                      ${active
-                        ? "bg-primary/10 border-primary/30 text-primary"
-                        : "bg-surface border border-border text-text-secondary hover:text-text-primary"
-                      }`}
-                  >
-                    {cta}
-                  </button>
-                );
-              })}
+              {ctaOptions.map((cta) => (
+                <button
+                  key={cta}
+                  type="button"
+                  onClick={() => toggleCta(cta)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all
+                    ${brand.allowedCtas.includes(cta)
+                      ? "bg-primary/10 border-primary/30 text-primary"
+                      : "bg-surface border border-border text-text-secondary hover:text-text-primary"
+                    }`}
+                >
+                  {cta}
+                </button>
+              ))}
             </div>
           </Card>
-
           <Card header={<h2 className="font-semibold text-text-primary">Dynamic CTA Rules</h2>}>
             <div className="space-y-4">
               <InputBlock
@@ -324,7 +237,6 @@ export default function BrandBrainPage() {
                 checked={dmLogic}
                 onChange={setDmLogic}
               />
-
               <div>
                 <p className="text-sm font-medium text-text-secondary mb-2">Reply Delay</p>
                 <div className="flex gap-2">
@@ -343,7 +255,6 @@ export default function BrandBrainPage() {
                   ))}
                 </div>
               </div>
-
               <div>
                 <p className="text-sm font-medium text-text-secondary mb-2">Trigger Keywords</p>
                 <p className="text-xs text-text-muted mb-2">AI will only auto-reply if the comment contains one of these words.</p>
@@ -398,7 +309,6 @@ export default function BrandBrainPage() {
                   }}
                 />
               </div>
-
               <div className="rounded-xl border border-error/10 bg-error/3 p-4 space-y-2">
                 <p className="text-xs font-medium text-error uppercase tracking-wider">Auto-Escalated Topics</p>
                 <p className="text-xs text-text-secondary">These topics are always sent to human review — AI will never auto-reply:</p>
@@ -408,7 +318,6 @@ export default function BrandBrainPage() {
                   ))}
                 </div>
               </div>
-
               <InputBlock
                 label="Custom Escalation Rules"
                 multiline

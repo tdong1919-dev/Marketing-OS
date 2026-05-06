@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// POST /api/social/connect — initiate Meta (Instagram/Facebook) OAuth flow
+const FB_APP_ID = "1859085634713050"
+const N8N_OAUTH_CALLBACK = "https://tdong1919.app.n8n.cloud/webhook/meta/connect/callback"
+const SCOPES = [
+  "pages_show_list",
+  "business_management",
+  "instagram_basic",
+  "instagram_manage_comments",
+  "pages_read_engagement",
+  "pages_manage_metadata",
+  "pages_read_user_content",
+  "pages_manage_engagement",
+  "instagram_manage_contents",
+]
+
+// POST /api/social/connect — build Meta OAuth URL and return it to the client
 export async function POST(_request: NextRequest) {
   const supabase = await createClient()
 
@@ -14,18 +28,20 @@ export async function POST(_request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // TODO: Build the real Meta OAuth authorization URL:
-  // const metaAuthUrl = new URL('https://www.facebook.com/v18.0/dialog/oauth')
-  // metaAuthUrl.searchParams.set('client_id', process.env.META_APP_ID!)
-  // metaAuthUrl.searchParams.set('redirect_uri', `${process.env.NEXT_PUBLIC_APP_URL}/api/social/callback`)
-  // metaAuthUrl.searchParams.set('scope', 'instagram_basic,instagram_manage_comments,pages_read_engagement')
-  // metaAuthUrl.searchParams.set('state', user.id) // CSRF token in production
-  // return NextResponse.json({ authUrl: metaAuthUrl.toString() })
+  // Encode userId + returnUrl in state so n8n can associate the connection
+  const state = encodeURIComponent(
+    JSON.stringify({
+      userId: user.id,
+      returnUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/dashboard?social_connected=true`,
+    })
+  )
 
-  // v1 placeholder — Meta App Review pending
-  return NextResponse.json({
-    status: 'coming_soon',
-    message:
-      'Instagram connection is coming soon. Join the waitlist to be notified when it launches.',
-  })
+  const authUrl = new URL('https://www.facebook.com/v20.0/dialog/oauth')
+  authUrl.searchParams.set('client_id', FB_APP_ID)
+  authUrl.searchParams.set('redirect_uri', N8N_OAUTH_CALLBACK)
+  authUrl.searchParams.set('scope', SCOPES.join(','))
+  authUrl.searchParams.set('response_type', 'code')
+  authUrl.searchParams.set('state', state)
+
+  return NextResponse.json({ authUrl: authUrl.toString() })
 }

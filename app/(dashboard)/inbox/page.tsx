@@ -78,7 +78,7 @@ export default function InboxPage() {
               onClick={() => setActiveTab(tab.value)}
               className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all
                 ${activeTab === tab.value
-                  ? "bg-primary/10 text-primary shadow-[0_0_10px_rgba(57,255,20,0.06)]"
+                  ? "bg-primary/10 text-primary shadow-[0_0_10px_rgba(123,63,242,0.06)]"
                   : "text-text-muted hover:text-text-secondary hover:bg-surface-elevated"
                 }`}
             >

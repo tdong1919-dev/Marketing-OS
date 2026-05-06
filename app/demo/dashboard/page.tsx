@@ -1,7 +1,4 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getCurrentUsage } from "@/lib/actions/usage";
-import { getBrandProfile } from "@/lib/actions/brand";
 import MetricCard from "@/components/ui/MetricCard";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -14,58 +11,25 @@ const activityIcon: Record<string, string> = {
   escalation: "⚠️",
 };
 
-export default async function DashboardPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+const metrics = [
+  { title: "Replies Sent", value: "1,284", change: "+12% this week", changePositive: true },
+  { title: "Leads Captured", value: "94", change: "+8 today", changePositive: true },
+  { title: "Conversion Rate", value: "7.3%", change: "+1.2%", changePositive: true },
+  { title: "Review Queue", value: "4", change: "needs review", changePositive: false },
+];
 
-  const [usage, brand] = await Promise.all([
-    user ? getCurrentUsage(user.id).catch(() => null) : null,
-    getBrandProfile().catch(() => null),
-  ]);
+const usagePct = 68;
+const usedReplies = 340;
+const replyLimit = 500;
 
-  // Pending review queue count
-  let reviewCount = 0;
-  if (user) {
-    const { count } = await supabase
-      .from("ai_replies")
-      .select(
-        "id, comment:comments!inner(social_account:social_accounts!inner(user_id))",
-        { count: "exact", head: true }
-      )
-      .eq("status", "pending")
-      .eq("comment.social_account.user_id", user.id);
-    reviewCount = count ?? 0;
-  }
-
-  const displayName = (user?.user_metadata?.full_name as string | undefined)
-    ?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "there";
-
-  const usagePct = usage?.percentUsed ?? 0;
-  const usedReplies = usage?.used ?? 0;
-  const replyLimit = usage?.limit ?? 250;
-  const periodStart = usage?.billingPeriodStart
-    ? new Date(usage.billingPeriodStart).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    : "—";
-  const periodEnd = usage?.billingPeriodEnd
-    ? new Date(usage.billingPeriodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    : "—";
-
-  const metrics = [
-    { title: "Replies Sent", value: String(usedReplies), change: "", changePositive: true },
-    { title: "Leads Captured", value: "—", change: "", changePositive: true },
-    { title: "Conversion Rate", value: "—", change: "", changePositive: true },
-    { title: "Review Queue", value: String(reviewCount), change: "", changePositive: false },
-  ];
-
-  const brandSetupComplete = !!brand?.business_name;
-
+export default function DemoDashboardPage() {
   return (
     <div className="p-5 md:p-7 max-w-5xl mx-auto space-y-6">
       {/* Welcome */}
       <div>
         <p className="text-xs text-text-muted uppercase tracking-wider mb-1">Overview</p>
         <h1 className="text-3xl font-semibold tracking-tight text-text-primary">
-          Welcome back, {displayName} 👋
+          Welcome back, Demo 👋
         </h1>
         <p className="text-sm text-text-secondary mt-1">Here&apos;s what&apos;s happening with your Autom8.</p>
       </div>
@@ -81,12 +45,10 @@ export default async function DashboardPage() {
             You&apos;re leaving <span className="text-primary font-bold">~32% of leads</span> unreplied.
           </p>
           <p className="text-xs text-text-secondary mt-1">
-            {reviewCount > 0
-              ? `${reviewCount} comment${reviewCount !== 1 ? "s are" : " is"} waiting in your review queue right now. Every missed comment is a missed lead.`
-              : "Connect your Instagram account and start capturing leads with AI replies."}
+            4 comments are waiting in your review queue right now. Every missed comment is a missed lead.
           </p>
         </div>
-        <Link href="/inbox">
+        <Link href="/demo/inbox">
           <Button variant="primary" size="md" className="shrink-0">Review Now →</Button>
         </Link>
       </div>
@@ -94,11 +56,7 @@ export default async function DashboardPage() {
       {/* Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {metrics.map((m, i) => (
-          <MetricCard
-            key={m.title}
-            {...m}
-            highlight={i === 0}
-          />
+          <MetricCard key={m.title} {...m} highlight={i === 0} />
         ))}
       </div>
 
@@ -107,30 +65,9 @@ export default async function DashboardPage() {
         <Card header={<h2 className="text-base font-semibold text-text-primary">Quick Actions</h2>}>
           <div className="space-y-2.5">
             {[
-              {
-                label: "Connect Instagram",
-                desc: "Link your account to start auto-replies",
-                icon: "📱",
-                href: "/onboarding",
-                cta: "Connect",
-                done: false,
-              },
-              {
-                label: "Turn On Automation",
-                desc: "Let Autom8 reply while you focus on growth",
-                icon: "⚡",
-                href: "/settings",
-                cta: "Activate",
-                done: false,
-              },
-              {
-                label: "Edit Brand Voice",
-                desc: "Train the AI to sound exactly like you",
-                icon: "🎨",
-                href: "/settings",
-                cta: "Edit",
-                done: brandSetupComplete,
-              },
+              { label: "Connect Instagram", desc: "Link your account to start auto-replies", icon: "📱", href: "/demo/settings", cta: "Connect", done: false },
+              { label: "Turn On Automation", desc: "Let Autom8 reply while you focus on growth", icon: "⚡", href: "/demo/settings", cta: "Activate", done: false },
+              { label: "Edit Brand Voice", desc: "Train the AI to sound exactly like you", icon: "🎨", href: "/demo/settings", cta: "Edit", done: true },
             ].map((action) => (
               <Link key={action.label} href={action.href}>
                 <div className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-primary/3 transition-all group">
@@ -171,7 +108,7 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-sm font-medium text-text-primary">Reply Usage This Month</p>
-            <p className="text-xs text-text-muted mt-0.5">{periodStart} → {periodEnd}</p>
+            <p className="text-xs text-text-muted mt-0.5">May 1 → May 31</p>
           </div>
           <div className="text-right">
             <p className="text-2xl font-bold text-primary">{usagePct}%</p>
@@ -180,18 +117,10 @@ export default async function DashboardPage() {
         </div>
         <div className="w-full h-2 bg-surface rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-700 ${
-              usagePct >= 80 ? "bg-error" : usagePct >= 60 ? "bg-warning" : "bg-primary shadow-[0_0_8px_rgba(123,63,242,0.4)]"
-            }`}
+            className="h-full rounded-full bg-gradient-brand shadow-[0_0_8px_rgba(123,63,242,0.4)] transition-all duration-700"
             style={{ width: `${usagePct}%` }}
           />
         </div>
-        {usagePct >= 60 && (
-          <div className="flex items-center justify-between mt-3">
-            <p className="text-xs text-warning">⚠ You&apos;re at {usagePct}% — consider upgrading</p>
-            <Link href="/billing" className="text-xs text-primary hover:underline">Upgrade →</Link>
-          </div>
-        )}
       </Card>
     </div>
   );

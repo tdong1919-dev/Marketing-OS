@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://autom8ig.io/sitemap.xml
