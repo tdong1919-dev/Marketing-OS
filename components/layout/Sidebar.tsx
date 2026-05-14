@@ -121,8 +121,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             alt="Autom8"
             width={140}
             height={60}
-            className="object-contain"
-            style={{ mixBlendMode: "screen", filter: "brightness(0.7)" }}
+            className="object-contain mix-blend-screen brightness-75"
             priority
           />
           <button onClick={onClose} aria-label="Close" className="md:hidden text-white/40 hover:text-white/80 p-1 shrink-0">

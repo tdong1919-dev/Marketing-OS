@@ -71,6 +71,7 @@ const platformBestTimes: Record<Platform, DaySlot[]> = {
 
 const platformInsights: Record<Platform, { label: string; value: string }[]> = {
   instagram: [
+    { label: "Followers",            value: "12.4K" },
     { label: "Avg. Engagement Rate", value: "3.2%" },
     { label: "Best Content Type",    value: "Reels" },
     { label: "Avg. Reach per Post",  value: "8.4K" },
@@ -78,6 +79,7 @@ const platformInsights: Record<Platform, { label: string; value: string }[]> = {
     { label: "Peak Audience Age",    value: "25–34" },
   ],
   facebook: [
+    { label: "Followers",            value: "8.2K" },
     { label: "Avg. Engagement Rate", value: "1.8%" },
     { label: "Best Content Type",    value: "Video" },
     { label: "Avg. Reach per Post",  value: "3.2K" },
@@ -85,6 +87,7 @@ const platformInsights: Record<Platform, { label: string; value: string }[]> = {
     { label: "Peak Audience Age",    value: "35–44" },
   ],
   x: [
+    { label: "Followers",            value: "3.7K" },
     { label: "Avg. Engagement Rate", value: "1.2%" },
     { label: "Best Content Type",    value: "Threads" },
     { label: "Avg. Impressions",     value: "6.8K" },
@@ -92,6 +95,7 @@ const platformInsights: Record<Platform, { label: string; value: string }[]> = {
     { label: "Peak Audience Age",    value: "18–34" },
   ],
   youtube: [
+    { label: "Subscribers",          value: "2.1K" },
     { label: "Avg. View Duration",   value: "4m 12s" },
     { label: "Best Content Length",  value: "8–12 min" },
     { label: "Avg. Views per Video", value: "1.2K" },
@@ -263,7 +267,7 @@ export default function SchedulerPage() {
         {[
           { id: "upload"    as const, label: "Schedule Content",  icon: "📤" },
           { id: "insights"  as const, label: "Deeper Analytics",  icon: "📊" },
-          { id: "analytics" as const, label: "Platform Analytics",icon: "📈", internal: true },
+          ...(isAdmin ? [{ id: "analytics" as const, label: "Platform Analytics", icon: "📈", internal: true }] : []),
         ].map((tab) => (
           <button
             key={tab.id}

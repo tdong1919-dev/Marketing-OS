@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/lib/auth-context";
 
 interface TopNavProps {
@@ -25,6 +26,19 @@ export default function TopNav({ onMenuClick, user }: TopNavProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
+
+      {/* Logo — mobile only, centered */}
+      <div className="md:hidden absolute left-1/2 -translate-x-1/2">
+        <Image
+          src="/logo.png"
+          alt="Autom8"
+          width={90}
+          height={38}
+          className="object-contain"
+          style={{ mixBlendMode: "screen", filter: "brightness(0.8)" }}
+          priority
+        />
+      </div>
 
       <div className="hidden md:block" />
 
