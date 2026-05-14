@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
@@ -109,16 +110,22 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       )}
 
       <aside
-        className={`fixed top-0 left-0 h-full w-56 bg-surface border-r border-border z-40 flex flex-col transition-transform duration-200
+        style={{ background: "#1a1525" }}
+        className={`fixed top-0 left-0 h-full w-56 border-r border-white/10 z-40 flex flex-col transition-transform duration-200
           ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:static md:z-auto shrink-0`}
       >
         {/* Logo */}
-        <div className="px-5 py-5 border-b border-border flex items-center justify-between">
-          <div>
-            <span className="text-lg font-bold text-primary tracking-tight glow-text">autom8</span>
-            <span className="block text-[10px] text-text-muted mt-0.5 tracking-widest uppercase">Socials</span>
-          </div>
-          <button onClick={onClose} aria-label="Close" className="md:hidden text-text-muted hover:text-white p-1">
+        <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+          <Image
+            src="/logo.png"
+            alt="Autom8"
+            width={140}
+            height={60}
+            className="object-contain"
+            style={{ mixBlendMode: "screen", filter: "brightness(0.7)" }}
+            priority
+          />
+          <button onClick={onClose} aria-label="Close" className="md:hidden text-white/40 hover:text-white/80 p-1 shrink-0">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
@@ -135,10 +142,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group relative
                   ${active
                     ? "bg-primary/10 text-primary shadow-[0_0_12px_rgba(123,63,242,0.08)]"
-                    : "text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                    : "text-white/50 hover:text-white/80 hover:bg-white/5"
                   }`}
               >
-                <span className={`transition-colors ${active ? "text-primary" : "text-text-muted group-hover:text-text-secondary"}`}>
+                <span className={`transition-colors ${active ? "text-primary" : "text-white/30 group-hover:text-white/60"}`}>
                   {item.icon}
                 </span>
                 <span className="flex-1 truncate">{item.label}</span>
@@ -157,19 +164,19 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         </nav>
 
         {/* Bottom user area */}
-        <div className="px-3 pb-4 border-t border-border pt-3 space-y-1">
+        <div className="px-3 pb-4 border-t border-white/10 pt-3 space-y-1">
           <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center text-white text-xs font-bold shrink-0">
               {initial}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-text-primary truncate">{displayName}</p>
-              <p className="text-[10px] text-text-muted truncate">{displayEmail}</p>
+              <p className="text-xs font-medium text-white/80 truncate">{displayName}</p>
+              <p className="text-[10px] text-white/40 truncate">{displayEmail}</p>
             </div>
           </div>
           <button
             onClick={() => { onClose(); signOut(); }}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-text-muted hover:text-error hover:bg-error/5 transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors"
           >
             <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
