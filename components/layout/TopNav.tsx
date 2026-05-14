@@ -35,7 +35,6 @@ export default function TopNav({ onMenuClick, user }: TopNavProps) {
           width={90}
           height={38}
           className="object-contain"
-          style={{ mixBlendMode: "screen", filter: "brightness(0.8)" }}
           priority
         />
       </div>
