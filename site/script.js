@@ -199,6 +199,7 @@ function pushTyping(){
 }
 
 async function runScenario(key){
+  if (!demoMessages) return;
   demoMessages.innerHTML = '';
   const s = SCENARIOS[key];
   if (!s) return;
