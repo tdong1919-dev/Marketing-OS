@@ -577,16 +577,13 @@ blockquote footer span{color:var(--muted);font-size:12px;margin-top:2px}
 .mission-block h2{max-width:760px;margin:0 auto 18px}
 .mission-block p{color:var(--muted);font-size:17px;max-width:620px;margin:0 auto 28px;line-height:1.7}
 
-/* ===== team section ===== */
-.team-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:28px;max-width:860px;margin:0 auto}
-.team-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:36px 32px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:18px;transition:transform .25s,border-color .25s}
-.team-card:hover{transform:translateY(-4px);border-color:rgba(248,87,166,.3)}
-.team-photo-wrap{width:128px;height:128px;border-radius:50%;background:var(--grad);padding:3px;flex-shrink:0}
-.team-photo-wrap img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;background:var(--bg-2)}
-.team-photo-wrap .team-initials{width:100%;height:100%;border-radius:50%;background:var(--bg-2);display:grid;place-items:center;font-size:38px;font-weight:900;font-family:'Plus Jakarta Sans',sans-serif}
-.team-card h3{font-size:21px;margin:0}
-.team-card .team-role{color:var(--muted);font-size:13px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
-.team-card p{color:var(--muted);font-size:15px;line-height:1.65;margin:0}
+/* ===== team duo (single vertical photo + bio) ===== */
+.team-duo{display:grid;grid-template-columns:340px 1fr;gap:56px;align-items:start;max-width:960px;margin:0 auto}
+.team-duo__photo{position:relative;border-radius:var(--radius-lg);overflow:hidden;background:var(--surface);border:1px solid var(--line);aspect-ratio:3/4}
+.team-duo__photo img{width:100%;height:100%;object-fit:cover;display:block;position:relative;z-index:1}
+.team-duo__placeholder{position:absolute;inset:0;display:grid;place-items:center;z-index:0}
+.team-duo__bio{font-size:17px;line-height:1.8;color:var(--muted);padding-top:4px}
+.team-duo__bio strong{color:var(--text)}
 
 /* ===== contact section ===== */
 .contact-section{background:linear-gradient(135deg,rgba(248,87,166,.06),rgba(123,63,242,.06));border:1px solid var(--line);border-radius:var(--radius-lg);padding:60px clamp(24px,5vw,60px)}
@@ -630,12 +627,14 @@ blockquote footer span{color:var(--muted);font-size:12px;margin-top:2px}
   .prose-grid{grid-template-columns:1fr;gap:20px}
   .prose-label{position:static}
   .pillar-grid{grid-template-columns:1fr}
-  .team-grid{grid-template-columns:1fr;max-width:480px}
+  .team-duo{grid-template-columns:1fr;gap:32px}
+  .team-duo__photo{max-width:400px;margin:0 auto}
   .contact-grid{grid-template-columns:1fr;gap:36px}
 }
 @media(max-width:560px){
   .page-hero{padding:100px 0 40px}
-  .team-card{padding:28px 20px}
+  .team-duo__photo{max-width:100%}
+  .team-duo__bio{font-size:16px}
   .contact-section{padding:40px 20px}
   .highlight-box{padding:24px 20px}
   .mission-block{padding:48px 20px}

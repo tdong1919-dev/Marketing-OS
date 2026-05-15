@@ -21,37 +21,37 @@
 <!-- ====== NAV ====== -->
 <header class="nav" id="nav">
   <div class="container nav__inner">
-    <a href="index.html" class="logo" aria-label="autom8ig home" style="gap:2px;align-items:center;">
-      <img src="logo-icon.png" alt="Autom8" class="logo__mark" style="width:40px;height:40px;object-fit:contain;background:none;box-shadow:none;border-radius:0;margin-bottom:-4px;" />
+    <a href="/" class="logo" aria-label="autom8ig home" style="gap:2px;align-items:center;">
+      <img src="/logo-icon.png" alt="Autom8" class="logo__mark" style="width:40px;height:40px;object-fit:contain;background:none;box-shadow:none;border-radius:0;margin-bottom:-4px;" />
       <span class="logo__text">autom8<em>ig</em></span>
     </a>
     <nav class="nav__links" aria-label="primary">
-      <a href="index.html#features">Features</a>
-      <a href="#demo">Live demo</a>
-      <a href="index.html#pricing">Pricing</a>
-      <a href="index.html#faq">FAQ</a>
+      <a href="/#features">Features</a>
+      <a href="/demo/dashboard">Live demo</a>
+      <a href="/#pricing">Pricing</a>
+      <a href="/#faq">FAQ</a>
       <span class="nav__sep" aria-hidden="true"></span>
-      <a href="future.html">The Future</a>
-      <a href="about.html" style="color:#fff">About Us</a>
-      <a href="privacy.html">Privacy Policy</a>
+      <a href="/future.html">The Future</a>
+      <a href="/about.html" style="color:#fff">About Us</a>
+      <a href="/privacy.html">Privacy Policy</a>
     </nav>
     <div class="nav__cta">
-      <a href="#demo" class="btn btn--ghost">Try the demo</a>
-      <a href="#pricing" class="btn btn--primary">Start free</a>
+      <a href="/demo/dashboard" class="btn btn--ghost">Try the demo</a>
+      <a href="/signup" class="btn btn--primary">Start free</a>
     </div>
     <button class="nav__burger" aria-label="Open menu" aria-expanded="false" id="burger">
       <span></span><span></span><span></span>
     </button>
   </div>
   <div class="nav__mobile" id="navMobile">
-    <a href="index.html#features">Features</a>
-    <a href="#demo">Live demo</a>
-    <a href="index.html#pricing">Pricing</a>
-    <a href="index.html#faq">FAQ</a>
-    <a href="future.html">The Future</a>
-    <a href="about.html">About Us</a>
-    <a href="privacy.html">Privacy Policy</a>
-    <a href="#pricing" class="btn btn--primary btn--block">Start free</a>
+    <a href="/#features">Features</a>
+    <a href="/demo/dashboard">Live demo</a>
+    <a href="/#pricing">Pricing</a>
+    <a href="/#faq">FAQ</a>
+    <a href="/future.html">The Future</a>
+    <a href="/about.html">About Us</a>
+    <a href="/privacy.html">Privacy Policy</a>
+    <a href="/signup" class="btn btn--primary btn--block">Start free</a>
   </div>
 </header>
 
@@ -99,44 +99,19 @@
       <p>Built by operators who've lived the problem — and are committed to solving it.</p>
     </header>
 
-    <div class="team-grid">
-
-      <!-- Crystal — replace crystal.jpg with actual photo -->
-      <div class="team-card">
-        <div class="team-photo-wrap">
-          <img
-            src="crystal.jpg"
-            alt="Crystal Dong"
-            onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"
-          />
-          <div class="team-initials" style="display:none">CD</div>
+    <!-- Upload team.jpg to the public/ folder in the repo -->
+    <div class="team-duo">
+      <div class="team-duo__photo">
+        <img src="team.jpg" alt="Crystal Dong and Timara Lau" />
+        <div class="team-duo__placeholder" aria-hidden="true">
+          <span class="gradient-text" style="font-size:clamp(48px,8vw,80px);font-weight:900;font-family:'Plus Jakarta Sans',sans-serif">C&amp;T</span>
         </div>
-        <h3>Crystal Dong</h3>
-        <p class="team-role">Founder &amp; CEO · Bare Branding Systems</p>
-        <p>A decade of experience helping businesses sharpen their brand, acquire customers, and grow sustainably across beauty, wellness, eCommerce, and beyond. Crystal saw firsthand how disconnected systems were costing businesses time, money, and momentum — and decided to build something better.</p>
       </div>
-
-      <!-- Timara — replace timara.jpg with actual photo -->
-      <div class="team-card">
-        <div class="team-photo-wrap">
-          <img
-            src="timara.jpg"
-            alt="Timara"
-            onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"
-          />
-          <div class="team-initials" style="display:none">T</div>
-        </div>
-        <h3>Timara</h3>
-        <p class="team-role">Co-Founder · Autom8</p>
-        <p>Bringing operational expertise and a sharp eye for systems thinking to the Autom8 ecosystem. Focused on building infrastructure that actually works for real businesses, real creators, and real people navigating a rapidly changing digital world.</p>
-      </div>
-
+      <p class="team-duo__bio">
+        Over the last decade, founder <strong>Crystal Dong</strong> has been helping businesses sharpen their brand, acquire customers, and grow sustainably across beauty, wellness, eCommerce, Real Estate and beyond. Crystal saw firsthand how disconnected systems were costing businesses time, money, and momentum — and decided to build something better. With <strong>Timara Lau</strong> acting as the connective tissue between strategy and execution, she manages content systems, operational workflows, campaign coordination, and marketing execution across Autom8's operations. Outside of Crystal and Timara, an eclectic and dynamic network of partners, collaborators, and developers are contributing to the same mission.
+      </p>
     </div>
 
-    <p style="text-align:center;color:var(--muted);font-size:14px;margin-top:32px">
-      Built with support from partnerships, collaborations, and both internal and external teams.<br>
-      Learn more at <a href="https://www.barebrandingsystems.com" target="_blank" rel="noopener" style="color:var(--pink)">barebrandingsystems.com</a>
-    </p>
   </div>
 </section>
 
@@ -197,7 +172,7 @@
           <p><strong>Each project serves the same overarching mission:</strong> helping people and businesses operate more effectively in the evolving digital era.</p>
         </div>
         <p>We are still early in the journey. But we believe thoughtful systems, responsible innovation, and collaborative growth will shape the next generation of businesses, platforms, and opportunities — and we are building for that future now.</p>
-        <a href="future.html" class="btn btn--ghost" style="align-self:flex-start;margin-top:8px">Read our vision →</a>
+        <a href="/future.html" class="btn btn--ghost" style="align-self:flex-start;margin-top:8px">Read our vision →</a>
       </div>
     </div>
   </div>
@@ -240,28 +215,28 @@
 <footer class="foot">
   <div class="container foot__grid">
     <div>
-      <a href="index.html" class="logo" style="flex-direction:column;align-items:flex-start;gap:0;">
-        <img src="logo-icon.png" alt="Autom8" class="logo__mark" style="width:64px;height:64px;object-fit:contain;background:none;box-shadow:none;border-radius:0;margin-bottom:-6px;" />
+      <a href="/" class="logo" style="flex-direction:column;align-items:flex-start;gap:0;">
+        <img src="/logo-icon.png" alt="Autom8" class="logo__mark" style="width:64px;height:64px;object-fit:contain;background:none;box-shadow:none;border-radius:0;margin-bottom:-6px;" />
         <span class="logo__text">autom8<em>ig</em></span>
       </a>
       <p class="foot__tag">Human amplified. Always.</p>
     </div>
     <div>
       <h4>Product</h4>
-      <a href="index.html#features">Features</a>
-      <a href="#demo">Live demo</a>
-      <a href="index.html#pricing">Pricing</a>
+      <a href="/#features">Features</a>
+      <a href="/demo/dashboard">Live demo</a>
+      <a href="/#pricing">Pricing</a>
     </div>
     <div>
       <h4>Company</h4>
-      <a href="future.html">The Future</a>
-      <a href="about.html" style="color:#fff">About Us</a>
+      <a href="/future.html">The Future</a>
+      <a href="/about.html" style="color:#fff">About Us</a>
       <a href="https://www.barebrandingsystems.com" target="_blank" rel="noopener">Bare Branding Systems</a>
     </div>
     <div>
       <h4>Legal</h4>
-      <a href="privacy.html">Privacy Policy</a>
-      <a href="#">Terms</a>
+      <a href="/privacy.html">Privacy Policy</a>
+      <a href="/terms">Terms</a>
       <a href="mailto:hello@autom8ig.io">Contact</a>
     </div>
   </div>
