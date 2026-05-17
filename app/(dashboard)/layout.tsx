@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
-import { Sidebar, TopNav, MobileBottomNav } from "@/components/layout";
+import { Sidebar, TopNav } from "@/components/layout";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,13 +21,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopNav onMenuClick={() => setSidebarOpen(true)} user={derivedUser} />
-        <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
+        <main className="flex-1 overflow-y-auto pb-4">
           {children}
         </main>
       </div>
-
-      {/* Mobile bottom nav */}
-      <MobileBottomNav />
     </div>
   );
 }

@@ -125,26 +125,6 @@ export default async function DashboardPage() {
         <p className="text-sm text-text-secondary mt-1">Here&apos;s what&apos;s happening with your Autom8.</p>
       </div>
 
-      {/* Revenue Impact Banner */}
-      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_0_24px_rgba(123,63,242,0.06)]">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-primary text-lg">📈</span>
-            <p className="text-sm font-bold text-primary">Revenue Opportunity Detected</p>
-          </div>
-          <p className="text-sm text-text-primary font-medium">
-            You&apos;re leaving <span className="text-primary font-bold">~32% of leads</span> unreplied.
-          </p>
-          <p className="text-xs text-text-secondary mt-1">
-            {reviewCount > 0
-              ? `${reviewCount} comment${reviewCount !== 1 ? "s are" : " is"} waiting in your review queue right now. Every missed comment is a missed lead.`
-              : "Connect your Instagram account and start capturing leads with AI replies."}
-          </p>
-        </div>
-        <Link href="/inbox">
-          <Button variant="primary" size="md" className="shrink-0">Review Now →</Button>
-        </Link>
-      </div>
 
       {/* Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

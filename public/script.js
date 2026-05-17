@@ -77,8 +77,7 @@ leadForm?.addEventListener('submit', e => {
     toast('Please enter a valid email');
     return;
   }
-  toast(`🎉 Welcome, ${email.split('@')[0]}! Check your inbox.`);
-  leadForm.reset();
+  window.location.href = '/signup?email=' + encodeURIComponent(email);
 });
 
 /* ---------- toast ---------- */

@@ -176,14 +176,14 @@ function OnboardingContent() {
                 <button
                   onClick={handleConnect}
                   disabled={connecting}
-                  className="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 border-dashed border-border hover:border-primary/40 hover:bg-primary/3 transition-all group disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-primary hover:brightness-110 transition-all shadow-[0_0_20px_rgba(123,63,242,0.3)] group disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <span className="text-3xl">{connecting ? "⏳" : "📱"}</span>
                   <div className="text-left">
-                    <p className="text-sm font-semibold text-text-primary group-hover:text-white">
+                    <p className="text-sm font-semibold text-white">
                       {connecting ? "Redirecting to Facebook…" : "Connect Facebook & Instagram Business"}
                     </p>
-                    <p className="text-xs text-text-muted">
+                    <p className="text-xs text-white/70">
                       {connecting ? "Please wait" : "Authorize via Meta Login — takes 30 seconds"}
                     </p>
                   </div>
