@@ -41,7 +41,7 @@ const chartData = mockUsage.dailyCounts.map((count, i) => ({
   replies: count,
 }));
 
-type MainTab = "account" | "billing" | "data";
+type MainTab = "account" | "billing" | "data" | "privacy";
 
 export default function AccountSettingsPage() {
   const [mainTab, setMainTab] = useState<MainTab>("account");
@@ -87,6 +87,7 @@ export default function AccountSettingsPage() {
     { id: "account", label: "Account", icon: "⚙️" },
     { id: "billing", label: "Billing", icon: "💳" },
     { id: "data", label: "Data Usage", icon: "📊" },
+    { id: "privacy", label: "Privacy", icon: "🔒" },
   ];
 
   return (
@@ -331,6 +332,112 @@ export default function AccountSettingsPage() {
               Need more replies? View plans →
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── PRIVACY TAB ── */}
+      {mainTab === "privacy" && (
+        <div className="space-y-4">
+          <Card>
+            <div className="space-y-1 pb-4 border-b border-border">
+              <h2 className="font-semibold text-text-primary text-base">Privacy Policy</h2>
+              <p className="text-xs text-text-muted">Last Updated: May 2026</p>
+            </div>
+            <div className="space-y-6 pt-4 text-sm text-text-secondary leading-relaxed">
+              <section className="space-y-2">
+                <p>Welcome to Autom8ig.io (&quot;Autom8,&quot; &quot;we,&quot; &quot;our,&quot; or &quot;us&quot;). Autom8 is an AI-powered automation and engagement platform that helps businesses and creators manage social media interactions, workflows, scheduling, and communication tools across supported third-party platforms.</p>
+                <p>This Privacy Policy explains how we collect, use, disclose, store, and protect your information when you access or use our website, applications, integrations, and services.</p>
+                <p>By accessing or using Autom8, you agree to the practices described in this Privacy Policy.</p>
+              </section>
+              <section className="space-y-3">
+                <h3 className="font-semibold text-text-primary text-sm">1. Information We Collect</h3>
+                <div className="space-y-1">
+                  <p className="font-medium text-text-primary text-xs uppercase tracking-wider">A. Information You Provide</p>
+                  <p>We may collect information you voluntarily provide, including: name, email address, business or organization name, billing information, account credentials through OAuth authentication, support requests and communications, and content you submit through the platform.</p>
+                  <p className="text-xs bg-surface border border-border rounded-xl px-3 py-2 mt-2">We do not store third-party social media passwords.</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="font-medium text-text-primary text-xs uppercase tracking-wider">B. Information Collected Automatically</p>
+                  <p>When you use Autom8, we may automatically collect: IP address, browser type and version, device information, operating system, usage activity and interactions, referral URLs, access times and dates, and cookie identifiers and analytics information.</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="font-medium text-text-primary text-xs uppercase tracking-wider">C. Information from Third-Party Platforms</p>
+                  <p>If you connect social media or third-party accounts to Autom8, we may receive information authorized by you through official APIs and OAuth permissions, including profile and account information, usernames, comments, messages, captions, engagement metadata, content interaction events, analytics and performance metrics, and post metadata.</p>
+                  <p>This information is only accessed in accordance with permissions granted by you and the applicable third-party platform policies.</p>
+                </div>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">2. How We Use Information</h3>
+                <p>We use information to: provide, maintain, and improve Autom8 services; automate social media engagement and workflows; generate AI-assisted responses and automation outputs; schedule and publish content; analyze platform performance and usage trends; authenticate accounts and maintain security; provide customer support; detect abuse, fraud, or unauthorized activity; comply with legal obligations; and enforce our Terms of Service.</p>
+                <p className="text-xs bg-surface border border-border rounded-xl px-3 py-2">We do not sell personal information.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">3. AI and Automated Processing</h3>
+                <p>Autom8 uses artificial intelligence and automation technologies to provide certain features and services. Your data may be processed by trusted third-party subprocessors and AI infrastructure providers solely for the purpose of delivering Autom8 functionality.</p>
+                <p>Autom8 does not use customer data to train public AI models unless explicitly disclosed and authorized. Users are responsible for reviewing and approving automated outputs before publishing where applicable.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">4. Legal Bases for Processing (GDPR)</h3>
+                <p>For users located in the European Economic Area (&quot;EEA&quot;), United Kingdom, or similar jurisdictions, we process personal data under one or more of the following legal bases: consent, contractual necessity, legitimate interests, or compliance with legal obligations.</p>
+                <p>You may withdraw consent at any time where processing is based on consent.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">5. Cookies and Tracking Technologies</h3>
+                <p>We may use cookies, pixels, and similar technologies to maintain sessions and authentication, improve website functionality, analyze traffic and usage, measure marketing and advertising effectiveness, and personalize user experience.</p>
+                <p>Third-party analytics or advertising providers may include services such as Google Analytics, Meta Pixel, LinkedIn Insight Tag, and TikTok Pixel. You may control cookie preferences through your browser settings.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">6. How We Share Information</h3>
+                <p>We may share information with cloud hosting providers, analytics providers, customer support tools, payment processors, AI and automation infrastructure providers, third-party platform APIs connected by the user, and legal authorities when required by law.</p>
+                <p className="text-xs bg-surface border border-border rounded-xl px-3 py-2">We do not sell or rent personal information to third parties.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">7. Data Retention</h3>
+                <p>We retain information only as long as reasonably necessary to provide services, maintain security and system integrity, comply with legal obligations, resolve disputes, and enforce agreements. Connected platform data, webhook events, and automation logs may be periodically deleted or anonymized after operational use.</p>
+                <p>Users may request deletion of their account and associated personal information at any time.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">8. International Data Transfers</h3>
+                <p>Autom8 is operated in the United States. If you access the service from outside the United States, you understand that your information may be transferred to, processed, and stored in the United States or other jurisdictions where our service providers operate. Where required by law, we implement appropriate safeguards for international data transfers.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">9. Data Security</h3>
+                <p>We implement commercially reasonable administrative, technical, and organizational safeguards designed to protect information, including encryption in transit, secure cloud infrastructure, access controls, OAuth authentication, security monitoring and logging, and limited internal access permissions.</p>
+                <p>However, no method of transmission or storage is completely secure, and we cannot guarantee absolute security.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">10. Your Privacy Rights</h3>
+                <p>Depending on your jurisdiction, you may have rights to: access personal information, correct inaccurate information, request deletion, object to processing, restrict processing, request portability, withdraw consent, and opt out of certain automated processing.</p>
+                <p>California residents may also have rights under the California Consumer Privacy Act (&quot;CCPA&quot;) and California Privacy Rights Act (&quot;CPRA&quot;).</p>
+                <p>To exercise your rights, contact: <a href="mailto:hello@barebranding.site" className="text-primary hover:underline">hello@barebranding.site</a>. We may verify your identity before processing requests.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">11. Third-Party Services and Links</h3>
+                <p>Autom8 may integrate with or link to third-party platforms, applications, or websites. We are not responsible for the privacy practices or content of third-party services. Your use of third-party services is governed by their own terms and privacy policies.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">12. Children&apos;s Privacy</h3>
+                <p>Autom8 is not intended for individuals under the age of 13, or under the minimum age required in your jurisdiction. We do not knowingly collect personal information from children. If we become aware that personal information has been collected from a child without appropriate consent, we will take reasonable steps to delete such information.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">13. Account Disconnect and Data Deletion</h3>
+                <p>Users may disconnect integrated social accounts at any time through the applicable platform settings or within Autom8. Users may request account deletion and associated data removal by contacting: <a href="mailto:hello@barebranding.site" className="text-primary hover:underline">hello@barebranding.site</a>. Certain information may be retained where legally required or necessary for legitimate business purposes.</p>
+              </section>
+              <section className="space-y-2">
+                <h3 className="font-semibold text-text-primary text-sm">14. Changes to This Privacy Policy</h3>
+                <p>We may update this Privacy Policy periodically. Updated versions will be posted on this page with a revised &quot;Last Updated&quot; date. Continued use of Autom8 after changes become effective constitutes acceptance of the updated policy.</p>
+              </section>
+              <section className="space-y-2 pb-2">
+                <h3 className="font-semibold text-text-primary text-sm">15. Contact Information</h3>
+                <p>If you have questions about this Privacy Policy or our data practices, please contact:</p>
+                <div className="rounded-xl bg-surface border border-border px-4 py-3 space-y-0.5 text-xs">
+                  <p className="font-medium text-text-primary">Autom8ig.io</p>
+                  <p>Operated under Bare Branding Systems</p>
+                  <p>Email: <a href="mailto:hello@barebranding.site" className="text-primary hover:underline">hello@barebranding.site</a></p>
+                </div>
+              </section>
+            </div>
+          </Card>
         </div>
       )}
 

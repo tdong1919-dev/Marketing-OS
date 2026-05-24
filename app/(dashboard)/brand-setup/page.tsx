@@ -30,7 +30,7 @@ function ConnectButton() {
   );
 }
 
-const toneOptions = ["Friendly", "Professional", "Playful", "Authoritative", "Luxe", "Bold", "Warm", "Minimalist"];
+const toneOptions = ["Friendly", "Professional", "Playful", "Authoritative", "Luxe", "Bold", "Warm", "Minimalist", "Funny", "Academic", "Positive", "Sarcastic"];
 const languageOptions = [
   { value: "English", label: "English" },
   { value: "Spanish", label: "Spanish" },
@@ -142,33 +142,52 @@ export default function BrandSetupPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Brand Brain</h1>
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs text-white/40 uppercase tracking-wider mb-0.5">Settings</p>
+          <h1 className="text-2xl font-bold text-white">Brand Brain</h1>
+          <p className="text-sm text-white/50 mt-0.5">Train your AI on your business details.</p>
+        </div>
         <div className="flex items-center gap-3">
           {saveState === "saving" && <span className="text-xs text-white/40 animate-pulse">Saving...</span>}
           {saveState === "saved" && <span className="text-xs text-green-400">✓ Saved</span>}
           {saveState === "error" && <span className="text-xs text-red-400">Save failed</span>}
-          <Button variant="primary" onClick={handleSave} loading={saveState === "saving"}>
+          <Button variant="primary" onClick={handleSave} loading={saveState === "saving"} className="w-full sm:w-auto">
             Save Brand Brain
           </Button>
         </div>
       </div>
 
       {/* Business Info */}
-      <Card header={<h2 className="font-semibold">Business Information</h2>}>
+      <Card header={
+        <div className="flex items-center gap-2">
+          <span className="text-base">🏢</span>
+          <h2 className="font-semibold text-sm">Business Information</h2>
+        </div>
+      }>
         <div className="space-y-4">
           <Input label="Business Name *" value={formData.businessName} onChange={e => set("businessName", e.target.value)} error={errors.businessName} placeholder="Your business name" />
-          <Input label="Website URL" type="url" value={formData.websiteUrl} onChange={e => set("websiteUrl", e.target.value)} placeholder="https://yourbusiness.com" />
-          <Input label="Booking Link" type="url" value={formData.bookingLink} onChange={e => set("bookingLink", e.target.value)} placeholder="https://calendly.com/..." />
-          <Input label="Phone Number" value={formData.phone} onChange={e => set("phone", e.target.value)} placeholder="+1 (555) 000-0000" />
-          <Input label="Location / Address" value={formData.location} onChange={e => set("location", e.target.value)} placeholder="City, State or full address" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input label="Website URL" type="url" value={formData.websiteUrl} onChange={e => set("websiteUrl", e.target.value)} placeholder="https://yourbusiness.com" />
+            <Input label="Booking / Appointment Link" type="url" value={formData.bookingLink} onChange={e => set("bookingLink", e.target.value)} placeholder="https://calendly.com/..." />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input label="Phone Number" value={formData.phone} onChange={e => set("phone", e.target.value)} placeholder="+1 (555) 000-0000" />
+            <Input label="Location / Address" value={formData.location} onChange={e => set("location", e.target.value)} placeholder="City, State or full address" />
+          </div>
           <Input label="Business Hours" value={formData.hours} onChange={e => set("hours", e.target.value)} placeholder="Mon–Fri 9am–6pm, Sat 10am–4pm" />
         </div>
       </Card>
 
       {/* Services & Pricing */}
-      <Card header={<h2 className="font-semibold">Services & Pricing</h2>}>
+      <Card header={
+        <div className="flex items-center gap-2">
+          <span className="text-base">💼</span>
+          <h2 className="font-semibold text-sm">Services & Pricing</h2>
+        </div>
+      }>
         <div className="space-y-4">
           <Textarea label="Services / Products" value={formData.servicesProducts} onChange={e => set("servicesProducts", e.target.value)} placeholder="List your main services or products..." maxLength={1000} />
           <Textarea label="Pricing Information" value={formData.pricings} onChange={e => set("pricings", e.target.value)} placeholder="Describe your pricing, packages, or price ranges..." maxLength={1000} />
@@ -176,10 +195,15 @@ export default function BrandSetupPage() {
       </Card>
 
       {/* Brand Voice */}
-      <Card header={<h2 className="font-semibold">Brand Voice & Tone</h2>}>
-        <div className="space-y-4">
+      <Card header={
+        <div className="flex items-center gap-2">
+          <span className="text-base">🎙️</span>
+          <h2 className="font-semibold text-sm">Brand Voice & Tone</h2>
+        </div>
+      }>
+        <div className="space-y-5">
           <div>
-            <label className="text-sm font-medium text-white/80 block mb-2">Tone (select all that apply)</label>
+            <label className="text-sm font-medium text-white/80 block mb-2">Tone <span className="text-white/30 font-normal">(select all that apply)</span></label>
             <div className="flex flex-wrap gap-2">
               {toneOptions.map(tone => (
                 <button key={tone} type="button"
@@ -194,17 +218,19 @@ export default function BrandSetupPage() {
               ))}
             </div>
           </div>
-          <Select label="Response Language" value={formData.language} onChange={e => set("language", e.target.value)} options={languageOptions} />
-          <div>
-            <label className="text-sm font-medium text-white/80 block mb-2">Allow Emojis</label>
-            <div className="flex gap-3">
-              {[true, false].map(val => (
-                <button key={String(val)} type="button" onClick={() => set("emojiAllowed", val)}
-                  className={`px-4 py-1.5 rounded-full text-sm border transition-all ${formData.emojiAllowed === val ? "bg-primary/20 border-primary text-primary" : "border-white/10 text-white/50 hover:border-white/30"}`}
-                >
-                  {val ? "Yes 😊" : "No"}
-                </button>
-              ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <Select label="Response Language" value={formData.language} onChange={e => set("language", e.target.value)} options={languageOptions} />
+            <div>
+              <label className="text-sm font-medium text-white/80 block mb-2">Allow Emojis</label>
+              <div className="flex gap-2">
+                {[true, false].map(val => (
+                  <button key={String(val)} type="button" onClick={() => set("emojiAllowed", val)}
+                    className={`flex-1 sm:flex-none px-4 py-2 rounded-full text-sm border transition-all ${formData.emojiAllowed === val ? "bg-primary/20 border-primary text-primary" : "border-white/10 text-white/50 hover:border-white/30"}`}
+                  >
+                    {val ? "Yes 😊" : "No"}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <Textarea label="Brand Voice Examples" value={formData.brandVoiceExamples} onChange={e => set("brandVoiceExamples", e.target.value)} placeholder="Paste example replies that match your brand voice..." maxLength={1500} />
@@ -212,7 +238,12 @@ export default function BrandSetupPage() {
       </Card>
 
       {/* CTAs */}
-      <Card header={<h2 className="font-semibold">Call-to-Action Settings</h2>}>
+      <Card header={
+        <div className="flex items-center gap-2">
+          <span className="text-base">📣</span>
+          <h2 className="font-semibold text-sm">Call-to-Action Settings</h2>
+        </div>
+      }>
         <div className="space-y-4">
           <Textarea label="Allowed CTAs" value={formData.allowedCtas} onChange={e => set("allowedCtas", e.target.value)} placeholder="e.g. Book a consultation, DM us for pricing, Visit our website..." maxLength={500} />
           <div>
@@ -224,23 +255,41 @@ export default function BrandSetupPage() {
       </Card>
 
       {/* FAQs */}
-      <Card header={<h2 className="font-semibold">Frequently Asked Questions</h2>}>
-        <div className="space-y-3">
-          <Textarea label="FAQ 1" value={formData.faq1} onChange={e => set("faq1", e.target.value)} placeholder="Q: What are your hours? A: We're open Mon–Fri 9am–6pm." maxLength={500} />
-          <Textarea label="FAQ 2" value={formData.faq2} onChange={e => set("faq2", e.target.value)} placeholder="Q: Do you offer consultations? A: Yes, book via our website." maxLength={500} />
-          <Textarea label="FAQ 3" value={formData.faq3} onChange={e => set("faq3", e.target.value)} placeholder="Q: Where are you located? A: We're at 123 Main St." maxLength={500} />
+      <Card header={
+        <div className="flex items-center gap-2">
+          <span className="text-base">❓</span>
+          <h2 className="font-semibold text-sm">Frequently Asked Questions</h2>
+        </div>
+      }>
+        <p className="text-xs text-white/40 mb-4">Train the AI to answer your 3 most commonly asked questions.</p>
+        <div className="space-y-4">
+          {[
+            { key: "faq1", val: formData.faq1, label: "FAQ 1", placeholder: "Q: What are your hours?\nA: We're open Mon–Fri 9am–6pm." },
+            { key: "faq2", val: formData.faq2, label: "FAQ 2", placeholder: "Q: Do you offer consultations?\nA: Yes, book via our website." },
+            { key: "faq3", val: formData.faq3, label: "FAQ 3", placeholder: "Q: Where are you located?\nA: We're at 123 Main St." },
+          ].map(({ key, val, label, placeholder }) => (
+            <div key={key} className="rounded-xl border border-white/8 bg-white/3 p-3">
+              <label className="text-xs font-semibold text-white/50 uppercase tracking-wider block mb-2">{label}</label>
+              <Textarea value={val} onChange={e => set(key, e.target.value)} placeholder={placeholder} maxLength={500} />
+            </div>
+          ))}
         </div>
       </Card>
 
       {/* Escalation */}
-      <Card header={<h2 className="font-semibold">Escalation Rules</h2>}>
+      <Card header={
+        <div className="flex items-center gap-2">
+          <span className="text-base">🚫</span>
+          <h2 className="font-semibold text-sm">Escalation Rules</h2>
+        </div>
+      }>
         <p className="text-xs text-white/40 mb-3">Topics the AI should NOT handle — escalate to your team instead.</p>
         <Textarea value={formData.escalationRules} onChange={e => set("escalationRules", e.target.value)} placeholder="e.g. Medical diagnoses, complaints, refund requests..." maxLength={1000} />
       </Card>
 
       {/* Connect */}
       <Card className="border-dashed border-primary/20">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="font-medium mb-1 text-text-primary">Connect Facebook & Instagram</h3>
             <p className="text-sm text-text-muted">Link your Meta Business account to start automating replies.</p>
@@ -248,6 +297,13 @@ export default function BrandSetupPage() {
           <ConnectButton />
         </div>
       </Card>
+
+      {/* Bottom save on mobile */}
+      <div className="sm:hidden pb-4">
+        <Button variant="primary" onClick={handleSave} loading={saveState === "saving"} className="w-full">
+          Save Brand Brain
+        </Button>
+      </div>
     </div>
   );
 }
