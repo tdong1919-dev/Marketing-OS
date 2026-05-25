@@ -167,6 +167,7 @@ export interface BrandProfile {
   faq_2: string | null
   faq_3: string | null
   allowed_ctas: string | null
+  ig_business_id: string | null
 }
 
 export interface BrandProfileInsert {
@@ -196,6 +197,7 @@ export interface BrandProfileInsert {
   faq_2?: string | null
   faq_3?: string | null
   allowed_ctas?: string | null
+  ig_business_id?: string | null
 }
 
 export interface BrandProfileUpdate {
@@ -222,6 +224,7 @@ export interface BrandProfileUpdate {
   faq_2?: string | null
   faq_3?: string | null
   allowed_ctas?: string | null
+  ig_business_id?: string | null
 }
 
 // ---------------------------------------------------------------------------
