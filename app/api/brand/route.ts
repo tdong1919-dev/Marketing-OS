@@ -37,22 +37,21 @@ export async function POST(request: NextRequest) {
   // Sync to Google Sheets via n8n webhook if configured
   const syncUrl = process.env.N8N_BRAND_SYNC_WEBHOOK
   if (syncUrl) {
-    // Get the user's ig_business_id for sheet row matching
     const { data: social } = await supabase
       .from('social_accounts')
       .select('external_account_id')
       .eq('user_id', user.id)
-      .eq('platform', 'instagram')
       .maybeSingle()
 
-    const igBusinessId = social?.external_account_id
-    if (igBusinessId) {
-      fetch(syncUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...body, ig_business_id: igBusinessId }),
-      }).catch(() => {})
-    }
+    fetch(syncUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...body,
+        user_id: user.id,
+        ig_business_id: social?.external_account_id ?? null,
+      }),
+    }).catch(() => {})
   }
 
   return NextResponse.json({ data }, { status: 200 })
