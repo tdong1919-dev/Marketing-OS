@@ -164,3 +164,30 @@ body {
 .prose-blog hr { border: none; border-top: 1px solid #262626; margin: 2rem 0; }
 /* Images responsive */
 .prose-blog img { max-width: 100%; height: auto; border-radius: 8px; }
+
+
+/* ── Mobile scroll smoothness ────────────────────────────────────────────────
+   The dashboard uses overflow-y-auto on a div container (not document scroll).
+   These rules give it native-feel momentum scrolling on iOS/Android.          */
+main {
+  -webkit-overflow-scrolling: touch; /* iOS momentum scroll */
+  overscroll-behavior-y: contain;    /* prevent bounce propagating to body */
+  overflow-x: hidden;                /* stop horizontal wobble */
+}
+
+/* Prevent any child from causing horizontal scroll bleed */
+.prose-blog,
+.prose-blog * {
+  max-width: 100%;
+}
+
+.prose-blog pre {
+  white-space: pre;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Smooth scroll for anchor links inside posts */
+html {
+  scroll-behavior: smooth;
+}
