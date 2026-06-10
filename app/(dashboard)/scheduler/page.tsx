@@ -6,6 +6,9 @@ import Card from "@/components/ui/Card";
 import PlatformAnalytics from "./PlatformAnalytics";
 import ScheduledCalendar from "./ScheduledCalendar";
 import { useAuth } from "@/lib/auth-context";
+import { createClient } from "@/lib/supabase/client";
+
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 500MB
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -211,14 +214,29 @@ export default function SchedulerPage() {
   const removeFile = (idx: number) => setUploadedFiles((prev) => prev.filter((_, i) => i !== idx));
 
   const uploadFile = async (file: File): Promise<{ url: string; media_type: string }> => {
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch("/api/scheduler/upload", { method: "POST", body: fd });
+    if (file.size > MAX_UPLOAD_BYTES) {
+      throw new Error(`${file.name} is over the 500MB limit.`);
+    }
+    // 1. Authorize: get a signed upload URL (auth + path enforced server-side).
+    const res = await fetch("/api/scheduler/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, content_type: file.type }),
+    });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       throw new Error(j.error || `Upload failed for ${file.name}`);
     }
-    return res.json();
+    const { path, token, publicUrl, media_type } = await res.json();
+
+    // 2. Upload the bytes straight to Supabase Storage (bypasses Vercel's body limit).
+    const supabase = createClient();
+    const { error } = await supabase.storage
+      .from("content-media")
+      .uploadToSignedUrl(path, token, file);
+    if (error) throw new Error(error.message);
+
+    return { url: publicUrl, media_type };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
