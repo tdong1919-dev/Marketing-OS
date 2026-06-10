@@ -58,12 +58,21 @@ export async function POST(request: NextRequest) {
     }, { status: 404 })
   }
 
-  const result = await previewResponse({
-    commentText,
-    brand,
-    postCaption: body.post_caption ?? null,
-    simulateDmTrigger: body.simulate_dm_trigger,
-  })
+  let result
+  try {
+    result = await previewResponse({
+      commentText,
+      brand,
+      postCaption: body.post_caption ?? null,
+      simulateDmTrigger: body.simulate_dm_trigger,
+    })
+  } catch (err) {
+    return NextResponse.json({
+      error: 'Response generation failed',
+      detail: err instanceof Error ? err.message : String(err),
+      hint: 'Often an OpenAI key issue — verify OPENAI_API_KEY in Vercel env vars.',
+    }, { status: 502 })
+  }
 
   return NextResponse.json({
     input: {
