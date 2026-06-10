@@ -65,6 +65,22 @@ export async function handleDm(event: DmEvent, brand: BrandBrain): Promise<DmRes
     detectEscalationIntent(event.message_text)
 
   if (shouldEscalate) {
+    // Don't ghost the person — send a brief, fixed holding message (no AI, so it
+    // can't improvise on a sensitive refund/billing/legal topic) and flag for a human.
+    const emoji = brand.emoji_allowed
+    const holding = `Great question${emoji ? ' 🙏' : ''} — I want to make sure you get the right answer, so I'm passing this to a team member at ${brand.business_name}. They'll follow up here shortly!`
+
+    if (brand.page_token) {
+      const send = await sendInstagramMessage({
+        pageToken: brand.page_token,
+        pageId: brand.page_id,
+        recipient: { id: event.sender_id },
+        text: holding,
+      })
+      if (!send.ok) console.error('[handleDm] escalation holding-message send failed:', send.error)
+    }
+    history.push({ role: 'assistant', content: holding, ts: new Date().toISOString() })
+
     await supabase.from('dm_conversations').upsert({
       user_id: brand.user_id,
       social_account_id: brand.social_account_id,
@@ -78,7 +94,7 @@ export async function handleDm(event: DmEvent, brand: BrandBrain): Promise<DmRes
         ? 'max_messages_reached'
         : 'escalation_intent_detected',
     }, { onConflict: 'user_id,recipient_ig_id' })
-    return { status: 'escalated' }
+    return { status: 'escalated', reply_text: holding }
   }
 
   let replyText: string
