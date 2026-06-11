@@ -1,258 +1,175 @@
 "use client";
-import { useState, useMemo, useEffect } from "react";
-import MessageCard, { Message, MessageStatus } from "@/components/ui/MessageCard";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import Button from "@/components/ui/Button";
 
-interface InboxRow {
-  id: string;
-  comment_id: string;
-  draft_text: string;
-  edited_text: string | null;
-  status: string;
-  created_at: string;
-  comment?: {
-    id: string;
-    commenter_username: string;
-    comment_text: string;
-    social_account_id: string;
-  };
+// ─── Types ──────────────────────────────────────────────────────────────────
+interface LogItem {
+  id: string; kind: "comment" | "dm"; platform: string;
+  who: string; incoming: string; response: string; ts: string | null;
 }
-
-function mapToMessage(row: InboxRow): Message {
-  const statusMap: Record<string, MessageStatus> = {
-    pending: "review",
-    approved: "approved",
-    posted: "sent",
-    rejected: "escalated",
-  };
-  return {
-    id: row.id,
-    username: row.comment?.commenter_username ?? "unknown",
-    platform: "instagram",
-    comment: row.comment?.comment_text ?? "",
-    aiReply: row.edited_text ?? row.draft_text,
-    status: statusMap[row.status] ?? "review",
-    confidenceScore: 0,
-    detectedIntent: "",
-    tags: ["Comment"],
-    timestamp: new Date(row.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
-  };
+interface ReviewItem {
+  id: string; kind: "comment" | "dm"; refId: string; externalId: string | null;
+  platform: string; who: string; incoming: string; draft: string; reason: string; ts: string | null;
 }
+type Tab = "posted" | "review" | "approved";
 
-interface DmRow {
-  id: string;
-  recipient_ig_id: string;
-  recipient_username: string | null;
-  handoff_reason: string | null;
-  last_message_at: string | null;
-  history: { role: string; content: string; ts: string }[] | null;
-}
-
-function mapDmToMessage(dm: DmRow): Message {
-  const history = Array.isArray(dm.history) ? dm.history : [];
-  const lastUser = [...history].reverse().find((m) => m.role === "user");
-  const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
-  const reasonLabel = dm.handoff_reason === "max_messages_reached"
-    ? "Long conversation — needs a human"
-    : "Sensitive topic (refund/billing/legal) — needs a human";
-  return {
-    // dm: prefix lets handlers route DM actions to the right endpoint
-    id: `dm:${dm.id}`,
-    username: dm.recipient_username ?? `IG ${dm.recipient_ig_id}`,
-    platform: "instagram",
-    comment: lastUser?.content ?? "(no message captured)",
-    aiReply: lastAssistant?.content ?? "",
-    status: "escalated",
-    confidenceScore: 0,
-    detectedIntent: reasonLabel,
-    tags: ["DM", "Needs human"],
-    timestamp: dm.last_message_at
-      ? new Date(dm.last_message_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-      : "",
-  };
-}
-
-type FilterTab = "all" | "auto" | "review" | "escalated" | "responses";
-
-const TABS: { label: string; value: FilterTab; count?: number }[] = [
-  { label: "Escalated", value: "escalated" },
-  { label: "Needs Review", value: "review" },
-  { label: "Responses", value: "responses" },
-  { label: "Auto Posted", value: "auto" },
-  { label: "All", value: "all" },
-];
-
-interface ResponseLogItem {
-  id: string;
-  channel: "comment" | "dm";
-  platform: string;
-  recipient: string;
-  incoming_text: string;
-  response_text: string;
-  ts: string | null;
-}
-
-const PLATFORM_LABEL: Record<string, string> = {
-  instagram: "Instagram",
-  facebook: "Facebook",
-  x: "X",
-  reddit: "Reddit",
+const PLATFORM: Record<string, { label: string; icon: string; text: string }> = {
+  instagram: { label: "Instagram", icon: "📸", text: "text-fuchsia-400" },
+  facebook:  { label: "Facebook",  icon: "👤", text: "text-blue-400" },
+  x:         { label: "X",         icon: "✕",  text: "text-zinc-300" },
+  youtube:   { label: "YouTube",   icon: "▶",  text: "text-red-400" },
+  reddit:    { label: "Reddit",    icon: "🟠", text: "text-orange-400" },
 };
 
+const fmtTs = (ts: string | null) =>
+  ts ? new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+
+function ChannelTag({ kind, platform }: { kind: "comment" | "dm"; platform: string }) {
+  const p = PLATFORM[platform] ?? { label: platform, icon: "📄", text: "text-text-muted" };
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${p.text}`}>
+      <span>{p.icon}</span>{p.label} · {kind === "dm" ? "DM" : "Comment"}
+    </span>
+  );
+}
+
 export default function InboxPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [responses, setResponses] = useState<ResponseLogItem[]>([]);
+  const [posted, setPosted] = useState<LogItem[]>([]);
+  const [needsReview, setNeedsReview] = useState<ReviewItem[]>([]);
+  const [approved, setApproved] = useState<LogItem[]>([]);
+  const [platforms, setPlatforms] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<FilterTab>("all");
-  const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [tab, setTab] = useState<Tab>("posted");
+  const [platformFilter, setPlatformFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/inbox")
-      .then(r => r.json())
-      .then(json => {
-        const comments: Message[] = (json.data ?? []).map(mapToMessage);
-        const dmMsgs: Message[] = (json.dms ?? []).map(mapDmToMessage);
-        // Escalated DMs first so handoffs are front-and-center.
-        const all = [...dmMsgs, ...comments];
-        setMessages(all);
-        setResponses(json.responses ?? []);
-        setSelectedId(all[0]?.id ?? null);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/inbox");
+      const json = await res.json();
+      setPosted(json.posted ?? []);
+      setNeedsReview(json.needsReview ?? []);
+      setApproved(json.approved ?? []);
+      setPlatforms(json.platforms ?? []);
+    } catch {
+      /* empty state shown */
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Platforms present in the responses log (for the per-platform filter).
-  const platforms = useMemo(
-    () => Array.from(new Set(responses.map((r) => r.platform))).sort(),
-    [responses]
-  );
+  useEffect(() => { load(); }, [load]);
 
-  const filteredResponses = useMemo(() => {
-    let result = responses;
-    if (platformFilter !== "all") result = result.filter((r) => r.platform === platformFilter);
+  const byFilters = <T extends { platform: string; who: string; incoming: string }>(items: T[], extra: (i: T) => string) => {
+    let r = items;
+    if (platformFilter !== "all") r = r.filter((i) => i.platform === platformFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(
-        (r) =>
-          r.recipient.toLowerCase().includes(q) ||
-          r.incoming_text.toLowerCase().includes(q) ||
-          r.response_text.toLowerCase().includes(q)
-      );
+      r = r.filter((i) => i.who.toLowerCase().includes(q) || i.incoming.toLowerCase().includes(q) || extra(i).toLowerCase().includes(q));
     }
-    return result;
-  }, [responses, platformFilter, search]);
+    return r;
+  };
 
-  // Mark an escalated DM handoff as resolved (id is prefixed "dm:").
-  const resolveDm = async (messageId: string) => {
-    const dmId = messageId.replace(/^dm:/, "");
-    setMessages((prev) => prev.filter((m) => m.id !== messageId));
-    setSelectedId(null);
+  /* eslint-disable react-hooks/exhaustive-deps */
+  const postedF = useMemo(() => byFilters(posted, (i) => i.response), [posted, platformFilter, search]);
+  const approvedF = useMemo(() => byFilters(approved, (i) => i.response), [approved, platformFilter, search]);
+  const reviewF = useMemo(() => byFilters(needsReview, (i) => i.draft), [needsReview, platformFilter, search]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+
+  const counts = { posted: posted.length, review: needsReview.length, approved: approved.length };
+
+  // Currently selected item for the detail panel
+  const selectedReview = tab === "review" ? reviewF.find((i) => i.id === selectedId) ?? reviewF[0] : undefined;
+  const selectedLog = tab !== "review"
+    ? (tab === "posted" ? postedF : approvedF).find((i) => i.id === selectedId) ?? (tab === "posted" ? postedF : approvedF)[0]
+    : undefined;
+
+  // When a review item is selected, prime the editable draft.
+  useEffect(() => {
+    if (selectedReview) { setDraft(selectedReview.draft); setActionError(""); }
+  }, [selectedReview?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = async (item: ReviewItem, action: "approve" | "reject") => {
+    setBusy(true); setActionError("");
     try {
-      await fetch("/api/inbox/dm", {
-        method: "PATCH",
+      const res = await fetch("/api/inbox/approve", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: dmId, stage: "resolved" }),
+        body: JSON.stringify({ kind: item.kind, refId: item.refId, text: draft, action }),
       });
-    } catch {
-      /* optimistic — already removed from list */
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "Action failed");
+      setSelectedId(null);
+      await load();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusy(false);
     }
   };
 
-  const filtered = useMemo(() => {
-    let result = messages;
-    // "Auto Posted" covers auto-handled replies (approved/sent); others match directly.
-    if (activeTab === "auto") result = result.filter((m) => ["auto", "sent", "approved"].includes(m.status));
-    else if (activeTab !== "all") result = result.filter((m) => m.status === activeTab);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (m) =>
-          m.username.toLowerCase().includes(q) ||
-          m.comment.toLowerCase().includes(q) ||
-          m.aiReply.toLowerCase().includes(q)
-      );
-    }
-    return result;
-  }, [messages, activeTab, search]);
+  const TABS: { id: Tab; label: string; count: number }[] = [
+    { id: "posted", label: "Posted", count: counts.posted },
+    { id: "review", label: "Needs Review", count: counts.review },
+    { id: "approved", label: "Approved", count: counts.approved },
+  ];
 
-  const tabCounts = useMemo(() => ({
-    all: messages.length,
-    auto: messages.filter((m) => ["auto", "sent", "approved"].includes(m.status)).length,
-    review: messages.filter((m) => m.status === "review").length,
-    escalated: messages.filter((m) => m.status === "escalated").length,
-    responses: responses.length,
-  }), [messages, responses]);
-
-  const selectedMessage = filtered.find((m) => m.id === selectedId) ?? filtered[0];
-  const selectedResponse = filteredResponses.find((r) => r.id === selectedId);
-
-  const updateStatus = (id: string, status: MessageStatus) =>
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
-
-  const isDm = (id: string) => id.startsWith("dm:");
-  // For DM handoffs the primary action resolves the conversation; for comments it approves.
-  const handleApprove = (id: string) => (isDm(id) ? resolveDm(id) : updateStatus(id, "approved"));
+  const list = tab === "review" ? reviewF : tab === "posted" ? postedF : approvedF;
+  const emptyCopy = tab === "review"
+    ? { icon: "✅", title: "Nothing to review", sub: "Escalated comments & DMs that need your approval show up here." }
+    : tab === "approved"
+    ? { icon: "📨", title: "No approved items yet", sub: "Replies you approve & send from Needs Review appear here." }
+    : { icon: "📜", title: "No responses yet", sub: "Every comment & DM Autom8 auto-responds to is logged here." };
 
   return (
     <div className="flex h-full bg-bg">
       {/* Left column: list */}
       <div className="flex flex-col w-full md:w-80 lg:w-96 border-r border-border shrink-0 overflow-hidden">
-        {/* Header */}
         <div className="p-5 border-b border-border">
           <h1 className="text-2xl font-semibold tracking-tight text-text-primary mb-1">Inbox</h1>
-          <p className="text-xs text-text-muted">Review, approve, and send AI-powered replies before leads go cold.</p>
+          <p className="text-xs text-text-muted">Every AI response, plus anything that needs your approval.</p>
         </div>
 
         {/* Search */}
         <div className="px-4 py-3 border-b border-border">
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search messages & responses..."
-              className="w-full bg-surface border border-border rounded-xl pl-9 pr-3 py-2 text-sm text-text-primary placeholder-text-muted outline-none focus:border-primary/40 transition-colors"
-            />
-          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="w-full bg-surface border border-border rounded-xl px-3 py-2 text-sm text-text-primary placeholder-text-muted outline-none focus:border-primary/40 transition-colors"
+          />
         </div>
 
-        {/* Filter tabs */}
-        <div className="flex gap-0.5 px-3 py-2 border-b border-border overflow-x-auto scrollbar-none">
-          {TABS.map((tab) => (
+        {/* Tabs */}
+        <div className="flex gap-1 px-3 py-2 border-b border-border">
+          {TABS.map((t) => (
             <button
-              key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-                ${activeTab === tab.value
-                  ? "bg-primary/10 text-primary shadow-[0_0_10px_rgba(123,63,242,0.06)]"
-                  : "text-text-muted hover:text-text-secondary hover:bg-surface-elevated"
-                }`}
+              key={t.id}
+              onClick={() => { setTab(t.id); setSelectedId(null); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all
+                ${tab === t.id ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-secondary hover:bg-surface-elevated"}`}
             >
-              {tab.label}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold
-                ${activeTab === tab.value ? "bg-primary/20 text-primary" : "bg-border text-text-muted"}`}>
-                {tabCounts[tab.value]}
-              </span>
+              {t.label}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab === t.id ? "bg-primary/20 text-primary" : "bg-border text-text-muted"}`}>{t.count}</span>
             </button>
           ))}
         </div>
 
-        {/* Platform filter — responses log only */}
-        {activeTab === "responses" && platforms.length > 0 && (
+        {/* Platform filter */}
+        {platforms.length > 1 && (
           <div className="px-4 py-2.5 border-b border-border">
             <select
               value={platformFilter}
               onChange={(e) => setPlatformFilter(e.target.value)}
-              className="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs text-text-primary outline-none focus:border-primary/40 transition-colors cursor-pointer"
+              className="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs text-text-primary outline-none focus:border-primary/40 cursor-pointer"
             >
               <option value="all">All platforms</option>
-              {platforms.map((p) => (
-                <option key={p} value={p}>{PLATFORM_LABEL[p] ?? p}</option>
-              ))}
+              {platforms.map((p) => <option key={p} value={p}>{PLATFORM[p]?.label ?? p}</option>)}
             </select>
           </div>
         )}
@@ -262,135 +179,63 @@ export default function InboxPage() {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="text-4xl mb-3 animate-pulse">💬</div>
-              <p className="text-sm font-medium text-text-secondary">Loading...</p>
+              <p className="text-sm font-medium text-text-secondary">Loading…</p>
             </div>
-          ) : activeTab === "responses" ? (
-            filteredResponses.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="text-4xl mb-3">📜</div>
-                <p className="text-sm font-medium text-text-secondary">No responses yet</p>
-                <p className="text-xs text-text-muted mt-1">AI replies to comments &amp; DMs will be logged here.</p>
-              </div>
-            ) : (
-              filteredResponses.map((r) => (
-                <ResponseRow
-                  key={r.id}
-                  item={r}
-                  isSelected={selectedId === r.id}
-                  onSelect={() => setSelectedId(r.id)}
-                />
-              ))
-            )
-          ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="text-4xl mb-3">📭</div>
-              <p className="text-sm font-medium text-text-secondary">No messages yet</p>
-              <p className="text-xs text-text-muted mt-1">Connect your Instagram account to start receiving comments.</p>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="text-4xl mb-3">📭</div>
-              <p className="text-sm font-medium text-text-secondary">No messages found</p>
-              <p className="text-xs text-text-muted mt-1">Try adjusting your filters</p>
+          ) : list.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+              <div className="text-4xl mb-3">{emptyCopy.icon}</div>
+              <p className="text-sm font-medium text-text-secondary">{emptyCopy.title}</p>
+              <p className="text-xs text-text-muted mt-1">{emptyCopy.sub}</p>
             </div>
           ) : (
-            filtered.map((msg) => (
-              <MessageCard
-                key={msg.id}
-                message={msg}
-                compact
-                isSelected={selectedId === msg.id}
-                onSelect={(m) => setSelectedId(m.id)}
-                onApprove={handleApprove}
-                onEscalate={(id) => updateStatus(id, "escalated")}
-                onSend={(id) => updateStatus(id, "sent")}
-              />
+            list.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setSelectedId(item.id)}
+                className={`w-full text-left p-3 rounded-xl border transition-all
+                  ${selectedId === item.id ? "border-primary/40 bg-primary/5" : "border-border bg-surface hover:bg-surface-elevated"}`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <ChannelTag kind={item.kind} platform={item.platform} />
+                  <span className="text-[10px] text-text-muted shrink-0">{fmtTs(item.ts)}</span>
+                </div>
+                <p className="text-xs font-medium text-text-primary truncate">{item.who}</p>
+                <p className="text-[11px] text-text-muted line-clamp-2 mt-0.5">{item.incoming || "—"}</p>
+                {tab === "review" && (
+                  <span className="inline-block mt-1.5 text-[10px] text-warning bg-warning/10 border border-warning/20 px-1.5 py-0.5 rounded-full">
+                    {(item as ReviewItem).reason}
+                  </span>
+                )}
+              </button>
             ))
           )}
         </div>
       </div>
 
-      {/* Right column: preview panel (desktop only) */}
+      {/* Right column: detail */}
       <div className="hidden md:flex flex-1 flex-col overflow-hidden bg-bg">
-        {activeTab === "responses" ? (
-          selectedResponse ? (
-            <ResponseDetail item={selectedResponse} />
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-5xl mb-4">📜</div>
-                <p className="text-text-secondary font-medium">Select a response to view</p>
-                <p className="text-xs text-text-muted mt-1">Every AI reply sent to comments &amp; DMs is logged here</p>
-              </div>
-            </div>
-          )
-        ) : selectedMessage ? (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-2xl mx-auto">
-              <MessageCard
-                message={selectedMessage}
-                isSelected
-                onApprove={handleApprove}
-                onEscalate={(id) => updateStatus(id, "escalated")}
-                onSend={(id) => updateStatus(id, "sent")}
-              />
-
-              {/* Thread context */}
-              <div className="mt-4 rounded-2xl border border-border bg-surface-elevated p-5">
-                <p className="text-xs text-text-muted uppercase tracking-wider mb-3">Reply Thread Context</p>
-                <div className="space-y-2">
-                  <div className="flex items-start gap-2">
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
-                      {selectedMessage.username.replace("@", "").slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="flex-1 bg-surface rounded-xl px-3 py-2">
-                      <p className="text-xs font-medium text-text-secondary mb-0.5">{selectedMessage.username}</p>
-                      <p className="text-xs text-text-primary">{selectedMessage.comment}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2 pl-6">
-                    <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary text-[10px] font-bold shrink-0 mt-0.5">AI</div>
-                    <div className="flex-1 bg-primary/5 border border-primary/10 rounded-xl px-3 py-2">
-                      <p className="text-xs font-medium text-primary/70 mb-0.5">Autom8 AI</p>
-                      <p className="text-xs text-text-primary">{selectedMessage.aiReply}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-5xl mb-4">💬</div>
-              <p className="text-text-secondary font-medium">Select a message to review</p>
-              <p className="text-xs text-text-muted mt-1">Click any message in the list to see the full thread</p>
-            </div>
-          </div>
-        )}
+        {tab === "review" ? (
+          selectedReview ? (
+            <ReviewDetail item={selectedReview} draft={draft} setDraft={setDraft} busy={busy} error={actionError}
+              onApprove={() => act(selectedReview, "approve")} onReject={() => act(selectedReview, "reject")} />
+          ) : <EmptyDetail icon="✅" text="Nothing needs review" sub="You're all caught up." />
+        ) : selectedLog ? (
+          <LogDetail item={selectedLog} />
+        ) : <EmptyDetail icon="📜" text="Select an item" sub="Pick a response to see the full exchange." />}
       </div>
 
-      {/* Mobile: full-screen card (shown when selected on mobile) */}
+      {/* Mobile detail overlay */}
       {selectedId && (
         <div className="fixed inset-0 z-50 md:hidden bg-bg overflow-y-auto">
           <div className="p-4">
-            <button
-              onClick={() => setSelectedId(null)}
-              className="flex items-center gap-2 text-sm text-text-secondary mb-4 hover:text-text-primary transition-colors"
-            >
+            <button onClick={() => setSelectedId(null)} className="flex items-center gap-2 text-sm text-text-secondary mb-4 hover:text-text-primary">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
               Back to Inbox
             </button>
-            {activeTab === "responses" && selectedResponse ? (
-              <ResponseDetail item={selectedResponse} />
-            ) : selectedMessage ? (
-              <MessageCard
-                message={selectedMessage}
-                onApprove={(id) => { handleApprove(id); setSelectedId(null); }}
-                onEscalate={(id) => { updateStatus(id, "escalated"); setSelectedId(null); }}
-                onSend={(id) => { updateStatus(id, "sent"); setSelectedId(null); }}
-              />
-            ) : null}
+            {tab === "review" && selectedReview ? (
+              <ReviewDetail item={selectedReview} draft={draft} setDraft={setDraft} busy={busy} error={actionError}
+                onApprove={() => act(selectedReview, "approve")} onReject={() => act(selectedReview, "reject")} />
+            ) : selectedLog ? <LogDetail item={selectedLog} /> : null}
           </div>
         </div>
       )}
@@ -398,78 +243,111 @@ export default function InboxPage() {
   );
 }
 
-// ─── Responses log: list row + detail panel ──────────────────────────────────
-
-function PlatformTag({ platform }: { platform: string }) {
+// ─── Detail panels ────────────────────────────────────────────────────────────
+function Exchange({ who, incoming, response, label }: { who: string; incoming: string; response: string; label: string }) {
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/5 text-text-secondary border border-white/10 capitalize">
-      {PLATFORM_LABEL[platform] ?? platform}
-    </span>
-  );
-}
-
-function ResponseRow({ item, isSelected, onSelect }: { item: ResponseLogItem; isSelected: boolean; onSelect: () => void }) {
-  return (
-    <button
-      onClick={onSelect}
-      className={`w-full text-left p-3.5 rounded-xl border transition-all duration-150
-        ${isSelected
-          ? "border-primary/40 bg-primary/5 shadow-[0_0_16px_rgba(123,63,242,0.08)]"
-          : "border-border bg-surface hover:border-border/80 hover:bg-surface-elevated"
-        }`}
-    >
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <div className="flex items-center gap-1.5">
-          <PlatformTag platform={item.platform} />
-          <span className="text-[10px] uppercase tracking-wider text-text-muted font-medium">
-            {item.channel === "dm" ? "DM" : "Comment"}
-          </span>
+    <div className="space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+          {who.replace("@", "").slice(0, 2).toUpperCase()}
         </div>
-        <span className="text-[11px] text-text-muted shrink-0">
-          {item.ts ? new Date(item.ts).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
-        </span>
+        <div className="flex-1 bg-surface rounded-xl px-3 py-2">
+          <p className="text-xs font-medium text-text-secondary mb-0.5">{who}</p>
+          <p className="text-xs text-text-primary whitespace-pre-wrap">{incoming || "—"}</p>
+        </div>
       </div>
-      <p className="text-xs font-medium text-text-primary truncate mb-0.5">{item.recipient}</p>
-      <p className="text-[11px] text-text-muted line-clamp-2 leading-relaxed">{item.response_text}</p>
-    </button>
+      <div className="flex items-start gap-2 pl-6">
+        <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary text-[10px] font-bold shrink-0 mt-0.5">AI</div>
+        <div className="flex-1 bg-primary/5 border border-primary/10 rounded-xl px-3 py-2">
+          <p className="text-xs font-medium text-primary/70 mb-0.5">{label}</p>
+          <p className="text-xs text-text-primary whitespace-pre-wrap">{response || "—"}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function ResponseDetail({ item }: { item: ResponseLogItem }) {
+function LogDetail({ item }: { item: LogItem }) {
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex items-center justify-between mb-4">
+          <ChannelTag kind={item.kind} platform={item.platform} />
+          <span className="text-xs text-text-muted">{fmtTs(item.ts)}</span>
+        </div>
+        <div className="rounded-2xl border border-border bg-surface-elevated p-5">
+          <Exchange who={item.who} incoming={item.incoming} response={item.response} label="Autom8 AI — sent" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewDetail({
+  item, draft, setDraft, busy, error, onApprove, onReject,
+}: {
+  item: ReviewItem; draft: string; setDraft: (v: string) => void; busy: boolean; error: string;
+  onApprove: () => void; onReject: () => void;
+}) {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="max-w-2xl mx-auto space-y-4">
-        <div className="flex items-center gap-2">
-          <PlatformTag platform={item.platform} />
-          <span className="text-[10px] uppercase tracking-wider text-text-muted font-medium">
-            {item.channel === "dm" ? "Direct Message" : "Comment reply"}
-          </span>
-          <span className="text-[11px] text-text-muted ml-auto">
-            {item.ts ? new Date(item.ts).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
-          </span>
+        <div className="flex items-center justify-between">
+          <ChannelTag kind={item.kind} platform={item.platform} />
+          <span className="text-xs text-text-muted">{fmtTs(item.ts)}</span>
         </div>
+        <div className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-2.5 text-xs text-warning">{item.reason}</div>
 
-        <p className="text-sm font-semibold text-text-primary">{item.recipient}</p>
-
-        {item.incoming_text && (
+        {/* Incoming message */}
+        <div className="rounded-2xl border border-border bg-surface-elevated p-5">
           <div className="flex items-start gap-2">
             <div className="w-6 h-6 rounded-full bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
-              {item.recipient.replace(/^@|^IG /, "").slice(0, 2).toUpperCase()}
+              {item.who.replace("@", "").slice(0, 2).toUpperCase()}
             </div>
             <div className="flex-1 bg-surface rounded-xl px-3 py-2">
-              <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider mb-0.5">They said</p>
-              <p className="text-xs text-text-primary whitespace-pre-wrap">{item.incoming_text}</p>
+              <p className="text-xs font-medium text-text-secondary mb-0.5">{item.who}</p>
+              <p className="text-xs text-text-primary whitespace-pre-wrap">{item.incoming || "—"}</p>
             </div>
           </div>
-        )}
-
-        <div className="flex items-start gap-2 pl-6">
-          <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary text-[10px] font-bold shrink-0 mt-0.5">AI</div>
-          <div className="flex-1 bg-primary/5 border border-primary/10 rounded-xl px-3 py-2">
-            <p className="text-[10px] font-medium text-primary/70 uppercase tracking-wider mb-0.5">Autom8 AI replied</p>
-            <p className="text-xs text-text-primary whitespace-pre-wrap">{item.response_text}</p>
-          </div>
         </div>
+
+        {/* Editable response */}
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">
+            Your response {item.kind === "comment" ? "(posts as a public reply)" : "(sends as a DM)"}
+          </label>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={5}
+            placeholder={item.kind === "comment" ? "Write the reply to post…" : "Write the DM to send…"}
+            className="w-full bg-surface border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary outline-none focus:border-primary/40 resize-none"
+          />
+          {item.kind === "comment" && !item.draft && (
+            <p className="text-[11px] text-text-muted mt-1">No AI draft (this was flagged before drafting). Write your reply above.</p>
+          )}
+        </div>
+
+        {error && <div className="rounded-xl border border-error/30 bg-error/5 px-4 py-2.5 text-sm text-error">{error}</div>}
+
+        <div className="flex gap-2">
+          <Button variant="primary" loading={busy} onClick={onApprove} className="flex-1" disabled={!draft.trim()}>
+            ✓ Approve &amp; Send
+          </Button>
+          <Button variant="secondary" onClick={onReject} disabled={busy}>Reject</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyDetail({ icon, text, sub }: { icon: string; text: string; sub: string }) {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-5xl mb-4">{icon}</div>
+        <p className="text-text-secondary font-medium">{text}</p>
+        <p className="text-xs text-text-muted mt-1">{sub}</p>
       </div>
     </div>
   );

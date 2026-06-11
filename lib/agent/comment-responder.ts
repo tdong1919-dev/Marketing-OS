@@ -119,7 +119,9 @@ export async function handleComment(event: CommentEvent, brand: BrandBrain): Pro
     await supabase.from('ai_replies').insert({
       comment_id: commentRow.id,
       draft_text: replyText,
-      status: route === 'human_review' ? 'pending' : 'approved',
+      // 'pending' = awaiting human review; 'posted' = auto-sent by the AI.
+      // 'approved' is reserved for items a human reviewed + sent from the Inbox.
+      status: route === 'human_review' ? 'pending' : 'posted',
     })
   }
 
@@ -143,7 +145,12 @@ export async function handleComment(event: CommentEvent, brand: BrandBrain): Pro
 
   await supabase
     .from('comment_processing_log')
-    .update({ reply_status: 'replied', response_text: replyText })
+    .update({
+      // Escalated comments aren't sent — they wait for human review, so they
+      // must NOT show up in the auto-sent "Posted" log.
+      reply_status: route === 'human_review' ? 'pending_review' : 'replied',
+      response_text: replyText,
+    })
     .eq('ig_business_id', event.ig_business_id)
     .eq('comment_id', event.comment_id)
 
