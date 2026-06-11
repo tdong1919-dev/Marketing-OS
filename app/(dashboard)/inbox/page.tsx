@@ -102,7 +102,7 @@ export default function InboxPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [responses, setResponses] = useState<ResponseLogItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<FilterTab>("escalated");
+  const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -162,7 +162,9 @@ export default function InboxPage() {
 
   const filtered = useMemo(() => {
     let result = messages;
-    if (activeTab !== "all") result = result.filter((m) => m.status === activeTab);
+    // "Auto Posted" covers auto-handled replies (approved/sent); others match directly.
+    if (activeTab === "auto") result = result.filter((m) => ["auto", "sent", "approved"].includes(m.status));
+    else if (activeTab !== "all") result = result.filter((m) => m.status === activeTab);
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -177,7 +179,7 @@ export default function InboxPage() {
 
   const tabCounts = useMemo(() => ({
     all: messages.length,
-    auto: messages.filter((m) => m.status === "auto" || m.status === "sent").length,
+    auto: messages.filter((m) => ["auto", "sent", "approved"].includes(m.status)).length,
     review: messages.filter((m) => m.status === "review").length,
     escalated: messages.filter((m) => m.status === "escalated").length,
     responses: responses.length,
