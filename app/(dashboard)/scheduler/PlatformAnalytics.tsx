@@ -226,7 +226,7 @@ export default function PlatformAnalytics() {
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 min-w-0">
       {/* Header row */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
@@ -305,7 +305,7 @@ export default function PlatformAnalytics() {
               </div>
             }
           >
-            <div className="h-56">
+            <div className="h-56 w-full overflow-hidden">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                   <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -347,7 +347,7 @@ export default function PlatformAnalytics() {
 
           {/* Engagement bar chart */}
           <Card header={<h2 className="text-sm font-semibold text-text-primary">Engagement Rate by Platform</h2>}>
-            <div className="h-36">
+            <div className="h-36 w-full overflow-hidden">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={summaries.map((s) => ({

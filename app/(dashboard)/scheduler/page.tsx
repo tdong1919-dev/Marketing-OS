@@ -363,11 +363,11 @@ export default function SchedulerPage() {
   }
 
   return (
-    <div className="p-5 md:p-7 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 sm:p-5 md:p-7 max-w-4xl mx-auto space-y-5 sm:space-y-6 overflow-x-hidden">
       {/* Header */}
       <div>
         <p className="text-xs text-text-muted uppercase tracking-wider mb-1">Content</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-text-primary">Smart Scheduler</h1>
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text-primary">Smart Scheduler</h1>
         <p className="text-sm text-text-secondary mt-1">
           Upload your content, describe the topic, and let AI handle captions, hashtags &amp; titles — then we post it for you.
         </p>
@@ -400,18 +400,18 @@ export default function SchedulerPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-border pb-0 overflow-x-auto scrollbar-none">
+      {/* Tabs — wrap instead of horizontal-scroll so mobile stays smooth */}
+      <div className="flex flex-wrap gap-1.5 sm:gap-2 border-b border-border pb-0">
         {[
-          { id: "upload"    as const, label: "Schedule Content",  icon: "📤" },
-          { id: "scheduled" as const, label: "Calendar",          icon: "📅" },
-          { id: "analytics" as const, label: "Platform Analytics", icon: "📈" },
-          { id: "insights"  as const, label: "Deeper Analytics",  icon: "📊" },
+          { id: "upload"    as const, label: "Schedule",  icon: "📤" },
+          { id: "scheduled" as const, label: "Calendar",  icon: "📅" },
+          { id: "analytics" as const, label: "Analytics", icon: "📈" },
+          { id: "insights"  as const, label: "Best Times", icon: "📊" },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+            className={`shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === tab.id
                 ? "border-primary text-primary"
                 : "border-transparent text-text-muted hover:text-text-secondary"
