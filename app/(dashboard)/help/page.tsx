@@ -27,23 +27,31 @@ export default function HelpTicketPage() {
   });
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const set = (key: string, val: string) => setForm((p) => ({ ...p, [key]: val }));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const subject = encodeURIComponent(
-      `Help Ticket [${form.concernType || "General"}] — ${form.pageName}`
-    );
-    const body = encodeURIComponent(
-      `Name: ${form.name}\nEmail: ${form.email}\nPhone: ${form.phone || "N/A"}\nPage / Account: ${form.pageName}\nConcern Type: ${form.concernType}\n\n${form.message}`
-    );
-    window.location.href = `mailto:hello@barebranding.site?subject=${subject}&body=${body}`;
-    setTimeout(() => {
+    setError("");
+    try {
+      const res = await fetch("/api/help", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "Something went wrong. Please try again or text us.");
+      }
       setSubmitted(true);
+      setForm({ name: "", email: "", phone: "", pageName: "", concernType: "", message: "" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit. Please try again.");
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   if (submitted) {
@@ -53,7 +61,7 @@ export default function HelpTicketPage() {
           <div className="text-5xl mb-4">✅</div>
           <h2 className="text-2xl font-bold text-text-primary mb-2">Ticket Submitted!</h2>
           <p className="text-text-secondary text-sm max-w-md mx-auto mb-2">
-            Your email client opened with your ticket pre-filled — just hit send. We&apos;ll get back to you within 24 hours.
+            We&apos;ve received your ticket and our team will get back to you within 24 hours.
           </p>
           <p className="text-xs text-text-muted mb-6">For urgent issues, use the Text Support button below.</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -189,6 +197,9 @@ export default function HelpTicketPage() {
           </div>
         </Card>
 
+        {error && (
+          <div className="rounded-xl border border-error/30 bg-error/5 px-4 py-3 text-sm text-error">{error}</div>
+        )}
         <div className="flex items-center justify-between pt-1">
           <p className="text-xs text-text-muted">We typically respond within 24 hours.</p>
           <Button type="submit" variant="primary" size="md" loading={loading}>
