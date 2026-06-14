@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     .from('collab_applications')
     .select('id, status')
     .or(`email.eq.${email},instagram_handle.eq.${instagram_handle}`)
-    .maybeSingle()
+    .maybeSingle() as { data: { id: string; status: string } | null }
 
   if (existing) {
     return NextResponse.json(
