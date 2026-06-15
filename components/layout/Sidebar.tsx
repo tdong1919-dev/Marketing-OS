@@ -151,10 +151,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group relative
                   ${active
                     ? "bg-primary/10 text-primary shadow-[0_0_12px_rgba(123,63,242,0.08)]"
-                    : "text-white/50 hover:text-white/80 hover:bg-white/5"
+                    : "text-white/70 hover:text-white hover:bg-white/8"
                   }`}
               >
-                <span className={`transition-colors ${active ? "text-primary" : "text-white/30 group-hover:text-white/60"}`}>
+                <span className={`transition-colors ${active ? "text-primary" : "text-white/55 group-hover:text-white/90"}`}>
                   {item.icon}
                 </span>
                 <span className="flex-1 truncate">{item.label}</span>
@@ -179,8 +179,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               {initial}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-white/80 truncate">{displayName}</p>
-              <p className="text-[10px] text-white/40 truncate">{displayEmail}</p>
+              <p className="text-xs font-medium text-white/90 truncate">{displayName}</p>
+              <p className="text-[10px] text-white/55 truncate">{displayEmail}</p>
             </div>
           </div>
           <button
