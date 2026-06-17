@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -40,9 +41,15 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
 
+  // Writes go through the service-role client: authorization is already enforced
+  // above (getUser) and user_id is set server-side, so we bypass RLS to avoid the
+  // FOR ALL / WITH CHECK rejection on content_queue. Matches the rest of the app.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const svc = createServiceClient() as any
+
   // Look up user's social account for this platform
   const platform = body.platform ?? 'instagram'
-  const { data: account } = await supabase
+  const { data: account } = await svc
     .from('social_accounts')
     .select('id')
     .eq('user_id', user.id)
@@ -50,7 +57,7 @@ export async function POST(request: NextRequest) {
     .eq('status', 'active')
     .maybeSingle()
 
-  const { data, error } = await supabase
+  const { data, error } = await svc
     .from('content_queue')
     .insert({
       user_id: user.id,
@@ -89,7 +96,9 @@ export async function PATCH(request: NextRequest) {
     Object.entries(body).filter(([k]) => allowed.includes(k))
   )
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const svc = createServiceClient() as any
+  const { data, error } = await svc
     .from('content_queue')
     .update(update)
     .eq('id', body.id)
@@ -110,7 +119,9 @@ export async function DELETE(request: NextRequest) {
   const id = searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const svc = createServiceClient() as any
+  const { error } = await svc
     .from('content_queue')
     .delete()
     .eq('id', id)

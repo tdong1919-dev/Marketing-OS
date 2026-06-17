@@ -181,6 +181,18 @@ main {
   max-width: 100%;
 }
 
+/* iOS Safari auto-zooms when a focused input/textarea/select has a font-size
+   below 16px, which shifts the viewport and makes form pages (like the Smart
+   Scheduler) feel "wobbly" on mobile. Force 16px on small screens — the visual
+   size is unchanged on desktop where Tailwind's text-sm still applies. */
+@media (max-width: 640px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 .prose-blog pre {
   white-space: pre;
   overflow-x: auto;
