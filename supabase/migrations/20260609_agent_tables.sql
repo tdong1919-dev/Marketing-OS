@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS platform_analytics (
 
 ALTER TABLE platform_analytics ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users see own analytics" ON platform_analytics
-  FOR ALL USING (user_id = auth.uid());
+  FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 CREATE INDEX IF NOT EXISTS idx_analytics_user_platform ON platform_analytics(user_id, platform);
 CREATE INDEX IF NOT EXISTS idx_analytics_date ON platform_analytics(date);
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS dm_conversations (
 
 ALTER TABLE dm_conversations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users see own DMs" ON dm_conversations
-  FOR ALL USING (user_id = auth.uid());
+  FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 CREATE INDEX IF NOT EXISTS idx_dm_user ON dm_conversations(user_id);
 CREATE INDEX IF NOT EXISTS idx_dm_recipient ON dm_conversations(user_id, recipient_ig_id);
