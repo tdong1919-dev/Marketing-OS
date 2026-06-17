@@ -21,3 +21,7 @@ export async function POST(request: NextRequest) {
   const result = await runPublisher()
   return NextResponse.json({ success: true, ...result })
 }
+
+// Vercel Cron triggers endpoints with a GET request, so alias GET to the same
+// handler. The CRON_SECRET bearer check inside still applies.
+export const GET = POST
