@@ -74,7 +74,9 @@ export async function GET(request: NextRequest) {
       user_id: userId,
       platform: 'youtube',
       external_account_id: channelId,
-      access_token_encrypted: tokens.refresh_token,
+      // social_accounts stores tokens in page_token_encrypted (the column that
+      // exists in the DB); for YouTube this holds the OAuth refresh token.
+      page_token_encrypted: tokens.refresh_token,
       username: channelTitle,
       connected_at: new Date().toISOString(),
       status: 'active',

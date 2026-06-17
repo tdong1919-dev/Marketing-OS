@@ -57,7 +57,7 @@ export async function runPublisher(): Promise<PublisherResult> {
         result = await publishToX(post)
       } else if (post.platform === 'youtube') {
         const yt = await getAccount(supabase, post.user_id, 'youtube')
-        result = await publishToYouTube(post, yt?.access_token_encrypted ?? '')
+        result = await publishToYouTube(post, yt?.page_token_encrypted ?? '')
       }
     } catch (err) {
       result = { ok: false, error: err instanceof Error ? err.message : 'publish error' }
@@ -104,7 +104,7 @@ async function getMetaAccount(supabase: any, userId: string) {
 async function getAccount(supabase: any, userId: string, platform: string) {
   const { data } = await supabase
     .from('social_accounts')
-    .select('access_token_encrypted, page_token_encrypted, external_account_id')
+    .select('page_token_encrypted, external_account_id')
     .eq('user_id', userId)
     .eq('platform', platform)
     .eq('status', 'active')
