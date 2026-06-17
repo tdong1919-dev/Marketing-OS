@@ -38,7 +38,8 @@ export default function SchedulerPage() {
   const { user } = useAuth();
   const isAdmin = user?.email === ADMIN_EMAIL;
 
-  const [selectedType, setSelectedType] = useState<ContentType | null>(null);
+  // Each selected platform gets its own content style. X only supports single photos.
+  const [platformTypes, setPlatformTypes] = useState<Partial<Record<Platform, ContentType>>>({ instagram: "short_video" });
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(["instagram"]);
   const [contentDesc, setContentDesc] = useState("");
   const [includeHashtags, setIncludeHashtags] = useState(true);
@@ -67,23 +68,29 @@ export default function SchedulerPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
+  // Default content style for a newly-selected platform.
+  // X only supports single photos for now; everything else defaults to video.
+  const defaultTypeFor = (p: Platform): ContentType => (p === "x" ? "post" : "short_video");
+
   const togglePlatform = (p: Platform) => {
     if (!isAdmin && p !== "instagram") return;
-    setSelectedPlatforms((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
-    );
+    const has = selectedPlatforms.includes(p);
+    setSelectedPlatforms((prev) => (has ? prev.filter((x) => x !== p) : [...prev, p]));
+    setPlatformTypes((prev) => {
+      const next = { ...prev };
+      if (has) delete next[p];
+      else next[p] = defaultTypeFor(p);
+      return next;
+    });
   };
 
-  // X (Twitter) currently supports single-photo posts only — no video/carousel.
-  const xSelected = selectedPlatforms.includes("x");
+  // Set a platform's content style. X is locked to single photo.
+  const setPlatformType = (p: Platform, t: ContentType) => {
+    if (p === "x" && t !== "post") return;
+    setPlatformTypes((prev) => ({ ...prev, [p]: t }));
+  };
 
-  // If X gets selected while a video/carousel type is chosen, fall back to a
-  // single photo so the batch stays valid for X.
-  useEffect(() => {
-    if (xSelected && (selectedType === "short_video" || selectedType === "carousel")) {
-      setSelectedType("post");
-    }
-  }, [xSelected, selectedType]);
+  const xSelected = selectedPlatforms.includes("x");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setUploadedFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
@@ -125,7 +132,7 @@ export default function SchedulerPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedType || selectedPlatforms.length === 0) return;
+    if (selectedPlatforms.length === 0) return;
     setScheduling(true);
     setScheduleError("");
 
@@ -133,7 +140,7 @@ export default function SchedulerPage() {
     let dayOffset = 0;
 
     // Generate a platform-optimized SEO caption from the brief (falls back to the brief on error).
-    const genCaption = async (platform: Platform): Promise<string | null> => {
+    const genCaption = async (platform: Platform, type: ContentType): Promise<string | null> => {
       if (!contentDesc.trim()) return null;
       try {
         const res = await fetch("/api/scheduler/generate-caption", {
@@ -142,7 +149,7 @@ export default function SchedulerPage() {
           body: JSON.stringify({
             description: contentDesc,
             platform,
-            content_type: typeMap[selectedType],
+            content_type: typeMap[type],
             include_hashtags: includeHashtags,
           }),
         });
@@ -174,23 +181,27 @@ export default function SchedulerPage() {
       const uploaded: { url: string; media_type: string }[] = [];
       for (const f of uploadedFiles) uploaded.push(await uploadFile(f));
 
-      // 2. Create one scheduled row per platform (carousel groups all images into one).
-      //    Each platform gets its own SEO-optimized caption generated from the brief.
+      // 2. Create scheduled rows per platform, each using that platform's own
+      //    content style and its own SEO-optimized caption.
       for (const platform of selectedPlatforms) {
-        const caption = await genCaption(platform);
-        if (selectedType === "carousel" && uploaded.length > 0) {
+        const type = platformTypes[platform] ?? defaultTypeFor(platform);
+        const caption = await genCaption(platform, type);
+
+        if (type === "carousel" && uploaded.length > 0) {
           await createRow({
             platform, caption, content_type: "carousel",
             media_url: JSON.stringify(uploaded.map((u) => u.url)),
             title: uploadedFiles[0]?.name ?? null,
           });
         } else if (uploaded.length > 0) {
-          for (const u of uploaded) {
+          // X supports a single photo only — post just the first image.
+          const items = platform === "x" ? uploaded.slice(0, 1) : uploaded;
+          for (const u of items) {
             await createRow({ platform, caption, content_type: u.media_type, media_url: u.url });
           }
         } else {
           // No media uploaded (CSV/description only) — schedule a placeholder row.
-          await createRow({ platform, caption, content_type: typeMap[selectedType], title: csvFile?.name ?? null });
+          await createRow({ platform, caption, content_type: typeMap[type], title: csvFile?.name ?? null });
         }
       }
       setSubmitted(true);
@@ -204,7 +215,7 @@ export default function SchedulerPage() {
   if (submitted) {
     const resetForm = () => {
       setUploadedFiles([]); setCsvFile(null);
-      setContentDesc(""); setSelectedType(null); setSelectedPlatforms(["instagram"]);
+      setContentDesc(""); setPlatformTypes({ instagram: "short_video" }); setSelectedPlatforms(["instagram"]);
     };
     return (
       <div className="p-5 md:p-7 max-w-4xl mx-auto">
@@ -354,48 +365,67 @@ export default function SchedulerPage() {
             )}
           </Card>
 
-          {/* Step 1: Content type */}
+          {/* Step 1: Content type — chosen per selected platform */}
           <Card header={<h2 className="text-sm font-semibold text-text-primary">2 · What are you posting?</h2>}>
-            <div className="grid sm:grid-cols-3 gap-3">
-              {contentTypes.map((ct) => {
-                // X only supports single photos for now — lock video & carousel.
-                const ctLocked = xSelected && ct.id !== "post";
+            <p className="text-xs text-text-muted mb-4">
+              Pick a content style for each platform. They can differ — e.g. a Reel on Instagram and a single photo on X.
+            </p>
+            <div className="space-y-4">
+              {selectedPlatforms.map((platform) => {
+                const cfg = PLATFORMS[platform];
+                const current = platformTypes[platform] ?? defaultTypeFor(platform);
                 return (
-                <button
-                  key={ct.id}
-                  type="button"
-                  disabled={ctLocked}
-                  onClick={() => { if (!ctLocked) setSelectedType(ct.id); }}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-xl border text-left transition-all
-                    ${ctLocked
-                      ? "border-border bg-surface opacity-50 cursor-not-allowed"
-                      : selectedType === ct.id
-                        ? "border-primary/40 bg-primary/8 shadow-[0_0_16px_rgba(123,63,242,0.08)]"
-                        : "border-border bg-surface hover:border-primary/20"
-                    }`}
-                >
-                  <span className="text-2xl">{ct.icon}</span>
-                  <div>
-                    <p className="text-sm font-semibold text-text-primary">{ct.label}</p>
-                    <p className="text-[11px] text-text-muted mt-0.5 leading-snug">{ct.note}</p>
+                  <div key={platform} className="rounded-xl border border-border bg-surface p-3 sm:p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">{cfg.icon}</span>
+                      <p className={`text-sm font-semibold ${cfg.textColor}`}>{cfg.label}</p>
+                      {platform === "x" && (
+                        <span className="text-[10px] text-text-muted border border-border px-2 py-0.5 rounded-full ml-auto">
+                          Single photo only · video coming soon
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {contentTypes.map((ct) => {
+                        // X only supports single photos for now — lock video & carousel.
+                        const locked = platform === "x" && ct.id !== "post";
+                        const active = current === ct.id;
+                        return (
+                          <button
+                            key={ct.id}
+                            type="button"
+                            disabled={locked}
+                            onClick={() => setPlatformType(platform, ct.id)}
+                            title={locked ? "Video posting for X is coming soon" : ct.note}
+                            className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-center transition-all
+                              ${locked
+                                ? "border-border bg-surface opacity-40 cursor-not-allowed"
+                                : active
+                                  ? "border-primary/40 bg-primary/8 shadow-[0_0_12px_rgba(123,63,242,0.08)]"
+                                  : "border-border bg-surface hover:border-primary/20"
+                              }`}
+                          >
+                            <span className="text-lg">{ct.icon}</span>
+                            <span className="text-[11px] font-medium text-text-primary leading-tight">{ct.label}</span>
+                            {locked ? (
+                              <span className="text-[9px] text-text-muted">Soon</span>
+                            ) : active ? (
+                              <span className="text-[9px] text-primary font-bold">✓</span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  {ctLocked ? (
-                    <span className="text-[10px] text-text-muted border border-border px-2 py-0.5 rounded-full mt-0.5">
-                      Coming soon for X
-                    </span>
-                  ) : selectedType === ct.id ? (
-                    <span className="text-xs text-primary font-semibold">✓ Selected</span>
-                  ) : null}
-                </button>
                 );
               })}
             </div>
 
-            {selectedType === "post" && (
-              <div className="mt-3 rounded-lg border border-warning/20 bg-warning/5 px-4 py-3 flex gap-2">
+            {Object.values(platformTypes).includes("post") && (
+              <div className="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-4 py-3 flex gap-2">
                 <span className="text-warning shrink-0">⚠</span>
                 <p className="text-xs text-warning leading-relaxed">
-                  <strong>Grid reminder:</strong> Posts are permanent on your profile grid. Make sure your image is properly formatted (square 1:1 or portrait 4:5) and fits your overall grid aesthetic before scheduling.
+                  <strong>Grid reminder:</strong> Single photo posts are permanent on your profile grid. Make sure the image is properly formatted (square 1:1 or portrait 4:5) and fits your grid aesthetic before scheduling.
                 </p>
               </div>
             )}
@@ -519,7 +549,7 @@ export default function SchedulerPage() {
               variant="primary"
               size="md"
               loading={scheduling}
-              disabled={!selectedType || selectedPlatforms.length === 0 || (uploadedFiles.length === 0 && !csvFile)}
+              disabled={selectedPlatforms.length === 0 || (uploadedFiles.length === 0 && !csvFile)}
             >
               Queue for Posting →
             </Button>
