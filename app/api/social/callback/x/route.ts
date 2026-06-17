@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
     console.log('[x-callback] x user:', xUser.username ?? 'unknown')
 
     // 3. Store in Supabase social_accounts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const svc = createServiceClient() as any
 
     const { data: existing } = await svc

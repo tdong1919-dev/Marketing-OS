@@ -14,6 +14,7 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const svc = createServiceClient() as any
 
   // Check for duplicate by email or handle
