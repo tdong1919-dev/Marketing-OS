@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import type { SubscriptionPlan, SubscriptionStatus } from '@/lib/types/database'
 
 // Lazily instantiated so missing env vars don't crash at build time
@@ -53,7 +53,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  const supabase = await createClient()
+  // Webhooks have no user session, so use the service role (bypasses RLS).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = createServiceClient() as any
 
   switch (event.type) {
     // ------------------------------------------------------------------ //
@@ -76,6 +78,15 @@ export async function POST(request: NextRequest) {
           reply_limit: PLAN_LIMITS[planKey] ?? replyLimit,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' })
+
+        // Free-month claim → mark the collaborator's application as claimed.
+        if (session.metadata?.source === 'collab_free_month') {
+          await supabase
+            .from('collab_applications')
+            .update({ free_month_claimed_at: new Date().toISOString() })
+            .eq('user_id', userId)
+            .is('free_month_claimed_at', null)
+        }
       } else if (session.mode === 'payment' && replyLimit > 0) {
         // One-time add-on — increment reply_limit on existing row
         const { data: sub } = await supabase

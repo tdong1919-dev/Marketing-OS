@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Sidebar, TopNav } from "@/components/layout";
+import BillingGate from "@/components/billing/BillingGate";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -42,6 +43,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-[100dvh] bg-bg overflow-hidden">
+      {/* Blocks the app with an "add a card" prompt once a free trial lapses */}
+      <BillingGate />
       {/* Desktop sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 

@@ -52,6 +52,10 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const stripe = getStripe()
 
+  // Public plans are card-first. If a first-month coupon is configured, apply it
+  // so month 1 is free with a card on file (auto-converts to paid in month 2).
+  const firstMonthCoupon = process.env.STRIPE_FIRST_MONTH_COUPON
+
   const session = await stripe.checkout.sessions.create({
     mode: config.mode,
     customer: sub?.stripe_customer_id ?? undefined,
@@ -65,7 +69,9 @@ export async function POST(request: NextRequest) {
       reply_limit: String(config.limit),
     },
     ...(config.mode === 'subscription' && {
+      payment_method_collection: 'always',
       subscription_data: { metadata: { user_id: user.id, plan } },
+      ...(firstMonthCoupon && { discounts: [{ coupon: firstMonthCoupon }] }),
     }),
   })
 

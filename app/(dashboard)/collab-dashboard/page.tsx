@@ -8,26 +8,48 @@ type Application = {
   instagram_handle: string;
   status: "pending" | "approved" | "declined" | "paused";
   referral_code: string | null;
+  free_month_claimed_at: string | null;
   created_at: string;
 };
+
+type BillingStatus = { status: string | null };
 
 export default function CollabDashboardPage() {
   const [app, setApp] = useState<Application | null>(null);
   const [referrals, setReferrals] = useState(0);
+  const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [claiming, setClaiming] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/collab/me");
-      const json = await res.json();
-      setApp(json.application ?? null);
-      setReferrals(json.referrals ?? 0);
+      const [meRes, billRes] = await Promise.all([
+        fetch("/api/collab/me"),
+        fetch("/api/billing/status"),
+      ]);
+      const me = await meRes.json();
+      const bill = await billRes.json().catch(() => ({}));
+      setApp(me.application ?? null);
+      setReferrals(me.referrals ?? 0);
+      setBilling({ status: bill.status ?? null });
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const claimFreeMonth = async () => {
+    setClaiming(true);
+    try {
+      const res = await fetch("/api/collab/claim-free-month", { method: "POST" });
+      const json = await res.json();
+      if (json.url) window.location.href = json.url;
+      else { setClaiming(false); alert(json.error ?? "Could not start your free month."); }
+    } catch {
+      setClaiming(false);
+    }
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -83,6 +105,37 @@ export default function CollabDashboardPage() {
 
       {app.status === "approved" && (
         <>
+          {/* Free-month claim / status */}
+          {billing && ["trialing", "active"].includes(billing.status ?? "") ? (
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 flex gap-2">
+              <span className="text-emerald-400 shrink-0">🎉</span>
+              <p className="text-sm text-text-secondary">
+                <strong className="text-text-primary">Your free month is active.</strong> Enjoy full access — add a card anytime before it ends to keep going without interruption.
+              </p>
+            </div>
+          ) : app.free_month_claimed_at ? (
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 flex gap-2">
+              <span className="text-amber-400 shrink-0">⏰</span>
+              <p className="text-sm text-text-secondary">
+                <strong className="text-text-primary">Your free month has ended.</strong> Add a card to continue — you&apos;ll be prompted on your next dashboard visit.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-text-primary">Claim your free month</p>
+                <p className="text-xs text-text-secondary mt-0.5">Full platform access for 30 days — no credit card required.</p>
+              </div>
+              <button
+                onClick={claimFreeMonth}
+                disabled={claiming}
+                className="shrink-0 text-sm font-semibold text-white bg-gradient-to-r from-accent-pink to-accent-purple rounded-lg px-5 py-2.5 disabled:opacity-60"
+              >
+                {claiming ? "Starting…" : "Start free month →"}
+              </button>
+            </div>
+          )}
+
           {/* Free month + referrals stats */}
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4">
