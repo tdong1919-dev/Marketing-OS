@@ -14,7 +14,7 @@ function getStripe() {
 }
 
 // The plan the free month grants. Change here to use a different tier.
-const COLLAB_PLAN = { key: 'growth', priceEnv: 'STRIPE_GROWTH_PRICE_ID', limit: 1000 }
+const COLLAB_PLAN = { key: 'starter', priceEnv: 'STRIPE_STARTER_PRICE_ID', limit: 250 }
 
 export async function POST() {
   const supabase = await createClient()
