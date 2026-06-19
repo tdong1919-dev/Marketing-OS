@@ -82,10 +82,13 @@ export async function GET(request: NextRequest) {
       status: 'active',
     }
 
-    if (existing) {
-      await svc.from('social_accounts').update(payload).eq('id', existing.id)
-    } else {
-      await svc.from('social_accounts').insert(payload)
+    const { error: saveError } = existing
+      ? await svc.from('social_accounts').update(payload).eq('id', existing.id)
+      : await svc.from('social_accounts').insert(payload)
+
+    if (saveError) {
+      console.error('[youtube callback] save failed:', saveError)
+      return NextResponse.redirect(new URL('/scheduler?yt_error=save_failed', appUrl))
     }
 
     return NextResponse.redirect(new URL('/scheduler?yt=connected', appUrl))
