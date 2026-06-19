@@ -43,8 +43,7 @@ export async function runPublisher(): Promise<PublisherResult> {
         if (!meta?.page_token || !meta?.ig_business_id) {
           result = { ok: false, error: 'Instagram not connected' }
         } else {
-          const ok = await publishToInstagram(post, meta.ig_business_id, meta.page_token)
-          result = { ok, error: ok ? undefined : 'Instagram publish failed' }
+          result = await publishToInstagram(post, meta.ig_business_id, meta.page_token)
         }
       } else if (post.platform === 'facebook') {
         const meta = await getMetaAccount(supabase, post.user_id)
@@ -112,15 +111,46 @@ async function getAccount(supabase: any, userId: string, platform: string) {
   return data
 }
 
+const IG_GRAPH = 'https://graph.facebook.com/v23.0'
+
+/** Publish the finished container, returning the new media id or an error. */
+async function igPublish(igBusinessId: string, creationId: string, pageToken: string): Promise<PublishResult> {
+  const res = await fetch(`${IG_GRAPH}/${igBusinessId}/media_publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ creation_id: creationId, access_token: pageToken }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || !json.id) return { ok: false, error: `IG publish: ${JSON.stringify(json.error ?? json)}` }
+  return { ok: true, externalId: json.id }
+}
+
+/**
+ * Poll a container's status_code until FINISHED. Video (Reels/carousel video
+ * children) must finish processing before media_publish — a fixed wait races
+ * and fails with "Media ID is not available". Images finish immediately.
+ */
+async function waitForContainer(creationId: string, pageToken: string): Promise<PublishResult> {
+  const maxAttempts = 20 // ~2 min at 6s — within the route's 300s budget
+  for (let i = 0; i < maxAttempts; i++) {
+    const res = await fetch(`${IG_GRAPH}/${creationId}?fields=status_code&access_token=${pageToken}`)
+    const json = await res.json().catch(() => ({}))
+    const code = json.status_code
+    if (code === 'FINISHED') return { ok: true }
+    if (code === 'ERROR' || code === 'EXPIRED') return { ok: false, error: `IG media processing ${code}` }
+    await sleep(6000)
+  }
+  return { ok: false, error: 'IG media still processing after timeout' }
+}
+
 async function publishToInstagram(
   post: Record<string, unknown>,
   igBusinessId: string,
   pageToken: string
-): Promise<boolean> {
+): Promise<PublishResult> {
   const mediaUrl = String(post.media_url ?? '')
   const caption = String(post.caption ?? '')
 
-  // Detect post type from URL
   const isVideo = /\.(mp4|mov)$/i.test(mediaUrl)
   const isCarousel = Array.isArray(post.media_url) || (typeof mediaUrl === 'string' && mediaUrl.startsWith('['))
 
@@ -128,12 +158,7 @@ async function publishToInstagram(
     return publishCarousel(post, igBusinessId, pageToken)
   }
 
-  // Create media container
-  const containerBody: Record<string, string> = {
-    caption,
-    access_token: pageToken,
-  }
-
+  const containerBody: Record<string, string> = { caption, access_token: pageToken }
   if (isVideo) {
     containerBody.media_type = 'REELS'
     containerBody.video_url = mediaUrl
@@ -141,54 +166,39 @@ async function publishToInstagram(
     containerBody.image_url = mediaUrl
   }
 
-  const containerRes = await fetch(
-    `https://graph.facebook.com/v23.0/${igBusinessId}/media`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(containerBody),
-    }
-  )
+  const containerRes = await fetch(`${IG_GRAPH}/${igBusinessId}/media`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(containerBody),
+  })
+  const containerJson = await containerRes.json().catch(() => ({}))
+  if (!containerRes.ok || !containerJson.id) {
+    return { ok: false, error: `IG container: ${JSON.stringify(containerJson.error ?? containerJson)}` }
+  }
 
-  if (!containerRes.ok) return false
-  const { id: creationId } = await containerRes.json()
+  const ready = await waitForContainer(containerJson.id, pageToken)
+  if (!ready.ok) return ready
 
-  // Wait for video processing
-  if (isVideo) await sleep(15000)
-
-  // Publish
-  const publishRes = await fetch(
-    `https://graph.facebook.com/v23.0/${igBusinessId}/media_publish`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creation_id: creationId, access_token: pageToken }),
-    }
-  )
-
-  return publishRes.ok
+  return igPublish(igBusinessId, containerJson.id, pageToken)
 }
 
 async function publishCarousel(
   post: Record<string, unknown>,
   igBusinessId: string,
   pageToken: string
-): Promise<boolean> {
+): Promise<PublishResult> {
   let urls: string[]
   try {
     urls = typeof post.media_url === 'string' ? JSON.parse(post.media_url) : (post.media_url as string[])
   } catch {
-    return false
+    return { ok: false, error: 'IG carousel: invalid media_url' }
   }
 
-  // Create child containers
+  // Create + await each child container.
   const childIds: string[] = []
   for (const url of urls) {
     const isVideo = /\.(mp4|mov)$/i.test(url)
-    const body: Record<string, string | boolean> = {
-      is_carousel_item: true,
-      access_token: pageToken,
-    }
+    const body: Record<string, string | boolean> = { is_carousel_item: true, access_token: pageToken }
     if (isVideo) {
       body.media_type = 'VIDEO'
       body.video_url = url
@@ -196,18 +206,19 @@ async function publishCarousel(
       body.image_url = url
     }
 
-    const res = await fetch(`https://graph.facebook.com/v23.0/${igBusinessId}/media`, {
+    const res = await fetch(`${IG_GRAPH}/${igBusinessId}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (!res.ok) return false
-    const { id } = await res.json()
-    childIds.push(id)
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok || !json.id) return { ok: false, error: `IG carousel child: ${JSON.stringify(json.error ?? json)}` }
+    const ready = await waitForContainer(json.id, pageToken)
+    if (!ready.ok) return ready
+    childIds.push(json.id)
   }
 
-  // Create carousel container
-  const carouselRes = await fetch(`https://graph.facebook.com/v23.0/${igBusinessId}/media`, {
+  const carouselRes = await fetch(`${IG_GRAPH}/${igBusinessId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -217,18 +228,15 @@ async function publishCarousel(
       access_token: pageToken,
     }),
   })
-  if (!carouselRes.ok) return false
-  const { id: carouselId } = await carouselRes.json()
+  const carouselJson = await carouselRes.json().catch(() => ({}))
+  if (!carouselRes.ok || !carouselJson.id) {
+    return { ok: false, error: `IG carousel container: ${JSON.stringify(carouselJson.error ?? carouselJson)}` }
+  }
 
-  await sleep(15000)
+  const ready = await waitForContainer(carouselJson.id, pageToken)
+  if (!ready.ok) return ready
 
-  const publishRes = await fetch(`https://graph.facebook.com/v23.0/${igBusinessId}/media_publish`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ creation_id: carouselId, access_token: pageToken }),
-  })
-
-  return publishRes.ok
+  return igPublish(igBusinessId, carouselJson.id, pageToken)
 }
 
 function sleep(ms: number): Promise<void> {
