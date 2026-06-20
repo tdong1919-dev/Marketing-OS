@@ -82,6 +82,41 @@ export async function sendCollabApprovalEmail(a: CollabApproval): Promise<Notify
   }
 }
 
+export interface TrialEnding {
+  email: string
+  name?: string | null
+  trialEndDate?: string | null
+  billingUrl: string
+}
+
+/** Email a user ~3 days before their free trial ends. Env-gated via Resend. */
+export async function sendTrialEndingEmail(t: TrialEnding): Promise<NotifyResult> {
+  const apiKey = process.env.RESEND_API_KEY
+  const from = process.env.HELP_NOTIFY_FROM || 'Autom8 <onboarding@resend.dev>'
+  if (!apiKey) return { ok: false, skipped: true }
+
+  const subject = `⏰ Your Autom8 free month is ending soon`
+  const when = t.trialEndDate ? `on ${t.trialEndDate}` : 'in a few days'
+  const text =
+    `Hi ${t.name || 'there'},\n\n` +
+    `Your free month of Autom8 ends ${when}. To keep your access without interruption, add a payment method before then:\n` +
+    `${t.billingUrl}\n\n` +
+    `If you add a card before your trial ends, your plan simply continues. If not, your access will pause until you add one.\n\n` +
+    `— The Autom8 Team`
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: t.email, subject, text }),
+    })
+    if (!res.ok) return { ok: false, error: `Resend ${res.status}: ${await res.text()}` }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'email send error' }
+  }
+}
+
 /** SMS via Twilio. Needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER. */
 export async function sendHelpSms(ticket: TicketNotification): Promise<NotifyResult> {
   const sid = process.env.TWILIO_ACCOUNT_SID

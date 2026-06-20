@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createServiceClient } from '@/lib/supabase/service'
+import { sendTrialEndingEmail } from '@/lib/notify'
 import type { SubscriptionPlan, SubscriptionStatus } from '@/lib/types/database'
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.autom8ig.io'
 
 // Lazily instantiated so missing env vars don't crash at build time
 function getStripe() {
@@ -135,6 +138,32 @@ export async function POST(request: NextRequest) {
       await supabase.from('subscriptions')
         .update({ status: 'past_due', updated_at: new Date().toISOString() })
         .eq('stripe_customer_id', invoice.customer as string)
+      break
+    }
+
+    // ------------------------------------------------------------------ //
+    case 'customer.subscription.trial_will_end': {
+      // Fires ~3 days before a trial ends — email the user to add a card.
+      const sub = event.data.object as Stripe.Subscription
+      try {
+        const customer = await stripe.customers.retrieve(sub.customer as string)
+        const email = customer && !('deleted' in customer) ? customer.email : null
+        if (email) {
+          const userId = sub.metadata?.user_id
+          let name: string | null = null
+          if (userId) {
+            const { data: appRow } = await supabase
+              .from('collab_applications').select('name').eq('user_id', userId).maybeSingle()
+            name = appRow?.name ?? null
+          }
+          const trialEndDate = sub.trial_end
+            ? new Date(sub.trial_end * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+            : null
+          await sendTrialEndingEmail({ email, name, trialEndDate, billingUrl: `${APP_URL}/collab-dashboard` })
+        }
+      } catch (err) {
+        console.error('[webhook] trial_will_end:', err)
+      }
       break
     }
 

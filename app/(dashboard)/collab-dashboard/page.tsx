@@ -22,6 +22,7 @@ export default function CollabDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [addingCard, setAddingCard] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,6 +51,18 @@ export default function CollabDashboardPage() {
       else { setClaiming(false); alert(json.error ?? "Could not start your free month."); }
     } catch {
       setClaiming(false);
+    }
+  };
+
+  const addCard = async () => {
+    setAddingCard(true);
+    try {
+      const res = await fetch("/api/billing/portal", { method: "POST" });
+      const json = await res.json();
+      if (json.url) window.location.href = json.url;
+      else { setAddingCard(false); alert(json.error ?? "Could not open billing."); }
+    } catch {
+      setAddingCard(false);
     }
   };
 
@@ -109,11 +122,20 @@ export default function CollabDashboardPage() {
         <>
           {/* Free-month claim / status */}
           {billing && ["trialing", "active"].includes(billing.status ?? "") ? (
-            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 flex gap-2">
-              <span className="text-emerald-400 shrink-0">🎉</span>
-              <p className="text-sm text-text-secondary">
-                <strong className="text-text-primary">Your free month is active.</strong> Enjoy full access — add a card anytime before it ends to keep going without interruption.
-              </p>
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex gap-2 min-w-0">
+                <span className="text-emerald-400 shrink-0">🎉</span>
+                <p className="text-sm text-text-secondary">
+                  <strong className="text-text-primary">Your free month is active.</strong> Add a card before it ends to keep going without interruption.
+                </p>
+              </div>
+              <button
+                onClick={addCard}
+                disabled={addingCard}
+                className="shrink-0 text-xs font-medium text-emerald-400 border border-emerald-400/30 rounded-lg px-3 py-1.5 hover:bg-emerald-400/10 transition-colors disabled:opacity-50"
+              >
+                {addingCard ? "Opening…" : "Add payment method"}
+              </button>
             </div>
           ) : app.free_month_claimed_at ? (
             <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 flex gap-2">
