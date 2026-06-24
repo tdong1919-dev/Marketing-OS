@@ -225,12 +225,14 @@ export default async function DashboardPage() {
                       </div>
                       <p className="text-xs text-text-muted truncate">{account.desc}</p>
                     </div>
-                    <Link
-                      href={account.href!}
-                      className="text-[11px] text-text-muted hover:text-text-secondary transition-colors shrink-0 underline underline-offset-2"
-                    >
-                      Reconnect
-                    </Link>
+                    {account.href ? (
+                      <Link
+                        href={account.href}
+                        className="text-[11px] text-text-muted hover:text-text-secondary transition-colors shrink-0 underline underline-offset-2"
+                      >
+                        Reconnect
+                      </Link>
+                    ) : null}
                   </div>
                 );
               }
@@ -262,8 +264,8 @@ export default async function DashboardPage() {
                 </div>
               );
 
-              return isLive ? (
-                <Link key={account.name} href={account.href!}>
+              return isLive && account.href ? (
+                <Link key={account.name} href={account.href}>
                   {inner}
                 </Link>
               ) : (
