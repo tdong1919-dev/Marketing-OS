@@ -1,76 +1,37 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import type { ResponseCookie } from 'next/dist/compiled/@edge-runtime/cookies'
+import { NextResponse } from "next/server";
+import type { EmailOtpType } from "@supabase/supabase-js";
+
+import { createClient } from "@/lib/supabase/server";
+
+export const runtime = "nodejs";
 
 /**
- * GET /auth/callback
- * Handles OAuth redirect and email confirmation from Supabase Auth.
- * Exchanges the auth code for a session, then:
- *  - New users (no brand profile) → /onboarding
- *  - Returning users → next param or /dashboard
- *
- * IMPORTANT: We manually copy session cookies onto the redirect response.
- * If we used cookieStore.set() and returned NextResponse.redirect() separately,
- * the cookies would be on different response objects and the browser would never
- * receive the session — leaving the user unauthenticated after the redirect.
+ * Handles Supabase email links (password recovery, magic link, email confirm).
+ * Exchanges the code / token for a session, then redirects to `next`.
+ * The recovery email points here via resetPasswordForEmail's redirectTo.
  */
-export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const origin = url.origin;
+  const code = url.searchParams.get("code");
+  const tokenHash = url.searchParams.get("token_hash");
+  const type = url.searchParams.get("type") as EmailOtpType | null;
+  const nextParam = url.searchParams.get("next") ?? "/dashboard";
+  const next = nextParam.startsWith("/") ? nextParam : "/dashboard";
+
+  const supabase = await createClient();
+  let ok = false;
 
   if (code) {
-    const cookieStore = await cookies()
-
-    // Collect cookies Supabase wants to set so we can attach them to the redirect
-    const pendingCookies: Array<{ name: string; value: string; options: Partial<ResponseCookie> }> = []
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              pendingCookies.push({ name, value, options: options ?? {} })
-            })
-          },
-        },
-      }
-    )
-
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-
-    if (!error) {
-      let redirectPath = next
-
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: brand } = await supabase
-          .from('brand_profiles')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle()
-
-        if (!brand) {
-          redirectPath = '/onboarding'
-        }
-      }
-
-      // Build the redirect and attach session cookies so the browser receives them
-      const response = NextResponse.redirect(`${origin}${redirectPath}`)
-      pendingCookies.forEach(({ name, value, options }) => {
-        response.cookies.set({ name, value, ...options })
-      })
-      return response
-    }
-
-    console.error('Auth code exchange error:', error)
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    ok = !error;
+  } else if (tokenHash && type) {
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+    ok = !error;
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
+  if (!ok) {
+    return NextResponse.redirect(`${origin}/login?error=reset_link_expired`);
+  }
+  return NextResponse.redirect(`${origin}${next}`);
 }

@@ -1,60 +1,43 @@
-import { NextResponse, type NextRequest } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { NextResponse, type NextRequest } from "next/server";
 
-/** Routes that require an authenticated session. */
-const PROTECTED_ROUTES = [
-  '/dashboard',
-  '/inbox',
-  '/analytics',
-  '/billing',
-  '/settings',
-  '/brand-setup',
-  '/onboarding',
-]
+import { updateSession } from "@/lib/supabase/middleware";
+import { getSiteOrigin } from "@/lib/site-url";
 
-/** Routes that authenticated users should be redirected away from. */
-const AUTH_ROUTES = ['/login', '/signup']
+function canonicalRedirect(request: NextRequest) {
+  const origin = getSiteOrigin(request);
+  const incomingOrigin = request.nextUrl.origin;
+  if (incomingOrigin === origin) return null;
 
+  const incomingHost = request.nextUrl.hostname;
+  const canonicalHost = new URL(origin).hostname;
+  const isVercelAlias =
+    incomingHost.endsWith(".vercel.app") && incomingHost !== canonicalHost;
+  const isProductionDeployment = process.env.VERCEL_ENV === "production";
+
+  if (!isProductionDeployment && !isVercelAlias) return null;
+
+  return NextResponse.redirect(
+    `${origin}${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
+}
+
+// Next.js 16 "proxy" convention (formerly middleware.ts).
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
+  const canonical = canonicalRedirect(request);
+  if (canonical) return canonical;
 
-  // Refresh the session and get the current user (if any).
-  const { supabaseResponse, user } = await updateSession(request)
-
-  const isProtected = PROTECTED_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`)
-  )
-  const isAuthRoute = AUTH_ROUTES.some((route) => pathname === route)
-
-  // Unauthenticated user trying to reach a protected route → /login
-  if (isProtected && !user) {
-    const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/login'
-    redirectUrl.searchParams.set('redirectTo', pathname)
-    return NextResponse.redirect(redirectUrl)
-  }
-
-  // Authenticated user trying to reach /login or /signup → /dashboard
-  if (isAuthRoute && user) {
-    const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/dashboard'
-    redirectUrl.searchParams.delete('redirectTo')
-    return NextResponse.redirect(redirectUrl)
-  }
-
-  // Return the (possibly session-refreshed) response.
-  return supabaseResponse
+  return updateSession(request);
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths EXCEPT:
+     * Match all request paths except for the ones starting with:
      * - _next/static (static files)
-     * - _next/image (image optimisation)
-     * - favicon.ico
-     * - public assets (png, svg, jpg, etc.)
+     * - _next/image (image optimization files)
+     * - favicon.ico, sitemap.xml, robots.txt
+     * - image/font assets
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
   ],
-}
+};

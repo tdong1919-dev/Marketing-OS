@@ -1,600 +1,382 @@
-"use client";
-import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
-import PlatformAnalytics from "./PlatformAnalytics";
-import ScheduledCalendar from "./ScheduledCalendar";
-import BestTimes from "./BestTimes";
-import { useAuth } from "@/lib/auth-context";
-import { createClient } from "@/lib/supabase/client";
+import {
+  AlertCircle,
+  CalendarClock,
+  CopyPlus,
+  Link2,
+  MessageCircle,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 
-const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 500MB
+import { requireUser } from "@/lib/auth";
+import {
+  PLATFORM_LABELS,
+  SCHEDULER_PLATFORMS,
+  connectionLabel,
+} from "@/lib/social/platforms";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
+import { SchedulerUploader } from "@/components/scheduler-uploader";
+import { PostStatusBadge } from "@/components/post-status-badge";
+import { Badge } from "@/components/ui/badge";
+import { Button, ButtonLink, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  scheduleAction,
+  unscheduleAction,
+  rematchAction,
+  deletePostAction,
+  updateCaptionAction,
+  duplicatePostAction,
+} from "./actions";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+export const metadata = { title: "Smart Scheduler · Jidoka Marketing Team OS" };
 
-const ADMIN_EMAIL = "tdong1919@gmail.com";
+function confidenceLabel(value: number | null) {
+  if (value == null) return "low confidence";
+  if (value >= 80) return "high confidence";
+  if (value >= 65) return "medium confidence";
+  return "low confidence";
+}
 
-type ContentType = "short_video" | "carousel" | "post";
+export default async function SchedulerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; title?: string; agent_id?: string }>;
+}) {
+  const { supabase } = await requireUser();
+  const { status = "all", title = "", agent_id: defaultAgentId = "" } =
+    await searchParams;
 
-const contentTypes: { id: ContentType; label: string; icon: string; note: string }[] = [
-  { id: "short_video", label: "Short-Form Video", icon: "🎬", note: "Reels, TikToks, Shorts — vertical 9:16 format" },
-  { id: "carousel",    label: "Carousel",          icon: "🖼️", note: "Up to 10 slides, square or portrait format" },
-  { id: "post",        label: "Post / Static Image",icon: "🖼",  note: "Single image or graphic — keep your grid layout in mind" },
-];
+  const [{ data: agents }, { data: posts }, { data: accounts }, { data: generatedContent }] =
+    await Promise.all([
+      supabase.from("marketing_os_writing_agents").select("id, name").order("name"),
+      supabase
+        .from("marketing_os_scheduled_posts")
+        .select(
+          "id, title, platform, content_type, status, scheduled_time, caption, generated_content_id, media_path, best_posting_window, ideal_days, confidence_score, schedule_reason, comment_dm_enabled, comment_auto_reply, dm_sequence, social_account_id, writing_agents:marketing_os_writing_agents(name)",
+        )
+        .order("created_at", { ascending: false }),
+      supabase.from("marketing_os_social_accounts").select("platform, status"),
+      supabase
+        .from("marketing_os_generated_content")
+        .select("id, agent_id, title, topic, platform, short_version, organic_version, primary_script")
+        .order("created_at", { ascending: false })
+        .limit(100),
+    ]);
 
-type Platform = "instagram" | "facebook" | "x" | "youtube";
-
-const PLATFORMS: Record<Platform, { label: string; icon: string; color: string; textColor: string }> = {
-  instagram: { label: "Instagram", icon: "📸", color: "#c026d3", textColor: "text-fuchsia-400" },
-  facebook:  { label: "Facebook",  icon: "👤", color: "#3b82f6", textColor: "text-blue-400"   },
-  x:         { label: "X",         icon: "✕",  color: "#a1a1aa", textColor: "text-zinc-300"   },
-  youtube:   { label: "YouTube",   icon: "▶",  color: "#ef4444", textColor: "text-red-400"    },
-};
-
-// ─── Main page ────────────────────────────────────────────────────────────────
-
-export default function SchedulerPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.email === ADMIN_EMAIL;
-
-  // Each selected platform gets its own content style. X only supports single photos.
-  const [platformTypes, setPlatformTypes] = useState<Partial<Record<Platform, ContentType>>>({ instagram: "short_video" });
-  const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(["instagram"]);
-  const [contentDesc, setContentDesc] = useState("");
-  const [includeHashtags, setIncludeHashtags] = useState(true);
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-  const [scheduling, setScheduling] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const [ytNotice, setYtNotice] = useState<{ type: "ok" | "error"; msg: string } | null>(null);
-
-  // Surface the YouTube connect result (?yt=connected / ?yt_error=...) then clean the URL.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("yt") === "connected") {
-      setYtNotice({ type: "ok", msg: "YouTube channel connected — you can now schedule YouTube videos." });
-    } else if (params.get("yt_error")) {
-      setYtNotice({ type: "error", msg: `YouTube connection failed: ${params.get("yt_error")}` });
-    }
-    if (params.has("yt") || params.has("yt_error")) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
-  const [scheduleError, setScheduleError] = useState("");
-  const [activeTab, setActiveTab] = useState<"upload" | "scheduled" | "insights" | "analytics">("upload");
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const csvInputRef = useRef<HTMLInputElement>(null);
-
-  // Default content style for a newly-selected platform.
-  // X only supports single photos for now; everything else defaults to video.
-  const defaultTypeFor = (p: Platform): ContentType => (p === "x" ? "post" : "short_video");
-
-  const togglePlatform = (p: Platform) => {
-    if (!isAdmin && p !== "instagram") return;
-    const has = selectedPlatforms.includes(p);
-    setSelectedPlatforms((prev) => (has ? prev.filter((x) => x !== p) : [...prev, p]));
-    setPlatformTypes((prev) => {
-      const next = { ...prev };
-      if (has) delete next[p];
-      else next[p] = defaultTypeFor(p);
-      return next;
-    });
-  };
-
-  // Set a platform's content style. X is locked to single photo.
-  const setPlatformType = (p: Platform, t: ContentType) => {
-    if (p === "x" && t !== "post") return;
-    setPlatformTypes((prev) => ({ ...prev, [p]: t }));
-  };
-
-  const xSelected = selectedPlatforms.includes("x");
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setUploadedFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
-  };
-
-  const handleCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) setCsvFile(e.target.files[0]);
-  };
-
-  const removeFile = (idx: number) => setUploadedFiles((prev) => prev.filter((_, i) => i !== idx));
-
-  const uploadFile = async (file: File): Promise<{ url: string; media_type: string }> => {
-    if (file.size > MAX_UPLOAD_BYTES) {
-      throw new Error(`${file.name} is over the 500MB limit.`);
-    }
-    // 1. Authorize: get a signed upload URL (auth + path enforced server-side).
-    const res = await fetch("/api/scheduler/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: file.name, content_type: file.type }),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      throw new Error(j.error || `Upload failed for ${file.name}`);
-    }
-    const { path, token, publicUrl, media_type, content_type } = await res.json();
-
-    // 2. Upload the bytes straight to Supabase Storage (bypasses Vercel's body limit).
-    //    Use the server-resolved content type — files with a missing browser MIME
-    //    would otherwise arrive as application/octet-stream and be rejected.
-    const supabase = createClient();
-    const { error } = await supabase.storage
-      .from("content-media")
-      .uploadToSignedUrl(path, token, file, { contentType: content_type || file.type || undefined });
-    if (error) throw new Error(`${file.name}: ${error.message}`);
-
-    return { url: publicUrl, media_type };
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedPlatforms.length === 0) return;
-    setScheduling(true);
-    setScheduleError("");
-
-    const typeMap: Record<ContentType, string> = { short_video: "reel", carousel: "carousel", post: "image" };
-    let dayOffset = 0;
-
-    // Generate a platform-optimized SEO caption from the brief (falls back to the brief on error).
-    const genCaption = async (platform: Platform, type: ContentType): Promise<string | null> => {
-      if (!contentDesc.trim()) return null;
-      try {
-        const res = await fetch("/api/scheduler/generate-caption", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            description: contentDesc,
-            platform,
-            content_type: typeMap[type],
-            include_hashtags: includeHashtags,
-          }),
-        });
-        const j = await res.json().catch(() => ({}));
-        return (j.caption as string) || contentDesc;
-      } catch {
-        return contentDesc;
-      }
-    };
-
-    const createRow = async (payload: Record<string, unknown>) => {
-      const when = new Date();
-      when.setDate(when.getDate() + dayOffset + 1);
-      when.setHours(18, 0, 0, 0);
-      dayOffset++;
-      const res = await fetch("/api/scheduler/queue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, scheduled_time: when.toISOString() }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || "Failed to schedule content");
-      }
-    };
-
-    try {
-      // 1. Upload any selected media to storage (public URLs for the publisher).
-      const uploaded: { url: string; media_type: string }[] = [];
-      for (const f of uploadedFiles) uploaded.push(await uploadFile(f));
-
-      // 2. Create scheduled rows per platform, each using that platform's own
-      //    content style and its own SEO-optimized caption.
-      for (const platform of selectedPlatforms) {
-        const type = platformTypes[platform] ?? defaultTypeFor(platform);
-        const caption = await genCaption(platform, type);
-
-        if (type === "carousel" && uploaded.length > 0) {
-          await createRow({
-            platform, caption, content_type: "carousel",
-            media_url: JSON.stringify(uploaded.map((u) => u.url)),
-            title: uploadedFiles[0]?.name ?? null,
-          });
-        } else if (uploaded.length > 0) {
-          // X supports a single photo only — post just the first image.
-          const items = platform === "x" ? uploaded.slice(0, 1) : uploaded;
-          for (const u of items) {
-            await createRow({ platform, caption, content_type: u.media_type, media_url: u.url });
-          }
-        } else {
-          // No media uploaded (CSV/description only) — schedule a placeholder row.
-          await createRow({ platform, caption, content_type: typeMap[type], title: csvFile?.name ?? null });
-        }
-      }
-      setSubmitted(true);
-    } catch (err) {
-      setScheduleError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-    } finally {
-      setScheduling(false);
-    }
-  };
-
-  if (submitted) {
-    const resetForm = () => {
-      setUploadedFiles([]); setCsvFile(null);
-      setContentDesc(""); setPlatformTypes({ instagram: "short_video" }); setSelectedPlatforms(["instagram"]);
-    };
-    return (
-      <div className="p-5 md:p-7 max-w-4xl mx-auto">
-        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-8 sm:p-10 text-center">
-          <div className="text-5xl mb-4">🚀</div>
-          <h2 className="text-2xl font-bold text-text-primary mb-2">Content Scheduled!</h2>
-          <p className="text-text-secondary text-sm max-w-md mx-auto mb-6">
-            Your content is queued — the AI will generate SEO captions, hashtags, and titles, and it&apos;s
-            scheduled to post at peak times. Review, edit, or delete it anytime on the calendar.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2.5 justify-center max-w-md mx-auto">
-            <Button variant="primary" className="w-full sm:w-auto" onClick={() => { setSubmitted(false); setActiveTab("scheduled"); }}>
-              📅 View Calendar
-            </Button>
-            <Button variant="secondary" className="w-full sm:w-auto" onClick={() => { setSubmitted(false); resetForm(); }}>
-              Schedule More
-            </Button>
-            <Link href="/dashboard" className="w-full sm:w-auto">
-              <Button variant="ghost" className="w-full">← Back to Dashboard</Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const agentList = agents ?? [];
+  const postList =
+    status === "all" ? posts ?? [] : (posts ?? []).filter((post) => post.status === status);
+  const connectedPlatforms = new Set(
+    (accounts ?? [])
+      .filter((account) => account.status === "active")
+      .map((account) => account.platform),
+  );
+  const agentIdForConnections = defaultAgentId || agentList[0]?.id || "";
 
   return (
-    <div className="p-4 sm:p-5 md:p-7 max-w-4xl mx-auto space-y-5 sm:space-y-6 overflow-x-hidden">
-      {/* Header */}
-      <div>
-        <p className="text-xs text-text-muted uppercase tracking-wider mb-1">Content</p>
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text-primary">Smart Scheduler</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Upload your content, describe the topic, and let AI handle captions, hashtags &amp; titles — then we post it for you.
-        </p>
+    <div className="space-y-8">
+      <PageHeader
+        title="Smart Scheduler"
+        description="Create social posts and Mailchimp email campaigns, bulk import a spreadsheet, and let Jidoka Marketing Team OS recommend timing from follower activity, audience behavior, and competitor windows."
+      />
+
+      <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-6">
+        {SCHEDULER_PLATFORMS.map((platform) => {
+          const connected = connectedPlatforms.has(platform.key);
+          const disabled = Boolean(platform.disabled);
+          const statusLabel = disabled
+            ? "API setup"
+            : connected
+              ? "Connected"
+              : "Not connected";
+          const canConnectNow = platform.connectable && !disabled;
+          return (
+            <div
+              key={platform.key}
+              className={`space-y-3 rounded-md bg-background px-3 py-3 text-sm ${
+                disabled ? "text-muted-foreground opacity-60" : ""
+              }`}
+              title={disabled ? platform.disabledReason : connectionLabel(platform.key, connected)}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{platform.label}</span>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      disabled
+                        ? "bg-muted-foreground/50"
+                        : connected
+                          ? "bg-emerald-500"
+                          : "bg-red-500"
+                    }`}
+                  />
+                  {statusLabel}
+                </span>
+              </div>
+              {disabled ? (
+                <div className="text-xs font-medium text-muted-foreground">
+                  API setup in progress
+                </div>
+              ) : connected ? (
+                <div className="text-xs font-medium text-emerald-600">Connected</div>
+              ) : canConnectNow && agentIdForConnections ? (
+                <a
+                  href={`/api/social/connect?agent_id=${agentIdForConnections}&platform=${platform.key}`}
+                  className={buttonVariants({ variant: "outline", size: "xs" })}
+                >
+                  Connect account
+                </a>
+              ) : !canConnectNow ? (
+                <div className="text-xs text-muted-foreground">Setup needed</div>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Create an agent first
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* YouTube connect result banner */}
-      {ytNotice && (
-        <div className={`rounded-xl border px-4 py-3 text-sm flex items-center justify-between gap-3
-          ${ytNotice.type === "ok" ? "border-primary/30 bg-primary/5 text-text-primary" : "border-error/30 bg-error/5 text-error"}`}>
-          <span>{ytNotice.msg}</span>
-          <button onClick={() => setYtNotice(null)} className="text-text-muted hover:text-text-primary shrink-0">✕</button>
-        </div>
+      {agentList.length === 0 ? (
+        <EmptyState
+          icon={CalendarClock}
+          title="No agents yet"
+          description="Create a writing agent before scheduling content."
+          actionLabel="Go to agents"
+          actionHref="/agents"
+        />
+      ) : (
+        <SchedulerUploader
+          agents={agentList}
+          connectedPlatforms={[...connectedPlatforms]}
+          defaultAgentId={defaultAgentId}
+          defaultTitle={title}
+          generatedContent={generatedContent ?? []}
+        />
       )}
 
-      {/* Workflow explainer */}
-      <div className="rounded-xl border border-border bg-surface-elevated p-4 flex flex-col sm:flex-row items-start gap-4">
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xl">📤</span>
-          <span className="text-xs text-text-muted">Upload</span>
+      <div>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg font-semibold">Queue</h2>
+          <div className="flex flex-wrap gap-2">
+            {["all", "draft", "scheduled", "failed", "posted"].map((item) => (
+              <ButtonLink
+                key={item}
+                href={`/scheduler?status=${item}`}
+                variant={status === item ? "default" : "outline"}
+                size="sm"
+              >
+                {item}
+              </ButtonLink>
+            ))}
+          </div>
         </div>
-        <div className="hidden sm:block text-text-muted text-lg mt-0.5">→</div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xl">🤖</span>
-          <span className="text-xs text-text-muted">AI adds SEO captions, hashtags, and titles</span>
-        </div>
-        <div className="hidden sm:block text-text-muted text-lg mt-0.5">→</div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xl">📅</span>
-          <span className="text-xs text-text-muted">Auto-schedule to post at peak times</span>
-        </div>
-      </div>
+        {postList.length === 0 ? (
+          <EmptyState
+            icon={CalendarClock}
+            title="Nothing scheduled"
+            description="Add a post or email campaign above. Tip: give it the same title as a generated piece so the copy attaches automatically."
+            actionLabel="Schedule content"
+            actionHref="/scheduler"
+          />
+        ) : (
+          <div className="space-y-3">
+            {postList.map((p) => {
+              const agent = p.writing_agents as unknown as { name: string } | null;
+              const isEmailCampaign = p.platform === "mailchimp";
+              return (
+                <Card key={p.id}>
+                  <CardContent className="space-y-3 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{p.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {agent?.name ?? "—"}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant="secondary">
+                          {PLATFORM_LABELS[p.platform as keyof typeof PLATFORM_LABELS] ??
+                            p.platform}
+                        </Badge>
+                        <Badge variant="outline">
+                          {isEmailCampaign ? "Email campaign" : p.content_type}
+                        </Badge>
+                        <PostStatusBadge status={p.status} />
+                      </div>
+                    </div>
 
-      {/* Tabs — wrap instead of horizontal-scroll so mobile stays smooth */}
-      <div className="flex flex-wrap gap-1.5 sm:gap-2 border-b border-border pb-0">
-        {[
-          { id: "upload"    as const, label: "Schedule",  icon: "📤" },
-          { id: "scheduled" as const, label: "Calendar",  icon: "📅" },
-          { id: "analytics" as const, label: "Analytics", icon: "📈" },
-          { id: "insights"  as const, label: "Best Times", icon: "📊" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
-              ${activeTab === tab.id
-                ? "border-primary text-primary"
-                : "border-transparent text-text-muted hover:text-text-secondary"
-              }`}
-          >
-            <span>{tab.icon}</span> {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* TAB: Schedule Content */}
-      {activeTab === "upload" && (
-        <form onSubmit={handleSubmit} className="space-y-5">
-
-          {/* Step 0: Platform selection */}
-          <Card header={<h2 className="text-sm font-semibold text-text-primary">1 · Choose platforms</h2>}>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {(Object.entries(PLATFORMS) as [Platform, typeof PLATFORMS[Platform]][]).map(([key, cfg]) => {
-                const locked = !isAdmin && key !== "instagram";
-                const selected = selectedPlatforms.includes(key);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => togglePlatform(key)}
-                    disabled={locked}
-                    className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border text-center transition-all
-                      ${locked
-                        ? "border-border bg-surface opacity-50 cursor-not-allowed"
-                        : selected
-                          ? "border-primary/40 bg-primary/8 shadow-[0_0_16px_rgba(123,63,242,0.08)]"
-                          : "border-border bg-surface hover:border-primary/20 cursor-pointer"
-                      }`}
-                  >
-                    <span className="text-2xl">{cfg.icon}</span>
-                    <p className={`text-xs font-semibold ${cfg.textColor}`}>{cfg.label}</p>
-                    {locked ? (
-                      <span className="text-[10px] text-text-muted border border-border px-2 py-0.5 rounded-full mt-0.5">
-                        Coming Soon
-                      </span>
-                    ) : selected ? (
-                      <span className="text-[10px] text-primary font-bold">✓ Selected</span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-            {!isAdmin && (
-              <p className="text-[11px] text-text-muted mt-3 text-center">
-                Facebook, X, and YouTube scheduling coming soon.
-              </p>
-            )}
-            {isAdmin && selectedPlatforms.includes("youtube") && (
-              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
-                <p className="text-xs text-text-secondary">
-                  YouTube uploads need a one-time channel connection.
-                </p>
-                <a href="/api/social/youtube/connect" className="shrink-0 text-xs font-medium text-red-400 border border-red-500/30 rounded-lg px-3 py-1.5 hover:bg-red-500/10 transition-colors">
-                  ▶ Connect YouTube
-                </a>
-              </div>
-            )}
-            {isAdmin && xSelected && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg border border-zinc-500/20 bg-zinc-500/5 px-4 py-3">
-                <span className="text-zinc-300 shrink-0">✕</span>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  <strong className="text-text-primary">X supports single photo posts only.</strong>{" "}
-                  Video posting for X is coming soon.
-                </p>
-              </div>
-            )}
-          </Card>
-
-          {/* Step 1: Content type — chosen per selected platform */}
-          <Card header={<h2 className="text-sm font-semibold text-text-primary">2 · What are you posting?</h2>}>
-            <p className="text-xs text-text-muted mb-4">
-              Pick a content style for each platform. They can differ — e.g. a Reel on Instagram and a single photo on X.
-            </p>
-            <div className="space-y-4">
-              {selectedPlatforms.map((platform) => {
-                const cfg = PLATFORMS[platform];
-                const current = platformTypes[platform] ?? defaultTypeFor(platform);
-                return (
-                  <div key={platform} className="rounded-xl border border-border bg-surface p-3 sm:p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-lg">{cfg.icon}</span>
-                      <p className={`text-sm font-semibold ${cfg.textColor}`}>{cfg.label}</p>
-                      {platform === "x" && (
-                        <span className="text-[10px] text-text-muted border border-border px-2 py-0.5 rounded-full ml-auto">
-                          Single photo only · video coming soon
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      {p.generated_content_id ? (
+                        <Link
+                          href={`/generated/${p.generated_content_id}`}
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                        >
+                          <Link2 className="h-3.5 w-3.5" /> Matched voice content
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          No title match yet
+                        </span>
+                      )}
+                      {p.media_path && (
+                        <span className="text-muted-foreground">media attached</span>
+                      )}
+                      {p.scheduled_time && (
+                        <span className="text-muted-foreground">
+                          {new Date(p.scheduled_time).toLocaleString()}
                         </span>
                       )}
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {contentTypes.map((ct) => {
-                        // X only supports single photos for now — lock video & carousel.
-                        const locked = platform === "x" && ct.id !== "post";
-                        const active = current === ct.id;
-                        return (
-                          <button
-                            key={ct.id}
-                            type="button"
-                            disabled={locked}
-                            onClick={() => setPlatformType(platform, ct.id)}
-                            title={locked ? "Video posting for X is coming soon" : ct.note}
-                            className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-center transition-all
-                              ${locked
-                                ? "border-border bg-surface opacity-40 cursor-not-allowed"
-                                : active
-                                  ? "border-primary/40 bg-primary/8 shadow-[0_0_12px_rgba(123,63,242,0.08)]"
-                                  : "border-border bg-surface hover:border-primary/20"
-                              }`}
-                          >
-                            <span className="text-lg">{ct.icon}</span>
-                            <span className="text-[11px] font-medium text-text-primary leading-tight">{ct.label}</span>
-                            {locked ? (
-                              <span className="text-[9px] text-text-muted">Soon</span>
-                            ) : active ? (
-                              <span className="text-[9px] text-primary font-bold">✓</span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
 
-            {Object.values(platformTypes).includes("post") && (
-              <div className="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-4 py-3 flex gap-2">
-                <span className="text-warning shrink-0">⚠</span>
-                <p className="text-xs text-warning leading-relaxed">
-                  <strong>Grid reminder:</strong> Single photo posts are permanent on your profile grid. Make sure the image is properly formatted (square 1:1 or portrait 4:5) and fits your grid aesthetic before scheduling.
-                </p>
-              </div>
-            )}
-          </Card>
-
-          {/* Step 2: Upload */}
-          <Card header={<h2 className="text-sm font-semibold text-text-primary">3 · Upload your content</h2>}>
-            <div className="space-y-4">
-              <div
-                className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer
-                  ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOver(false);
-                  const files = Array.from(e.dataTransfer.files ?? []);
-                  if (files.length) setUploadedFiles((prev) => [...prev, ...files]);
-                }}
-              >
-                <div className="text-3xl mb-2">📁</div>
-                <p className="text-sm font-medium text-text-primary">Drop photos or videos here</p>
-                <p className="text-xs text-text-muted mt-1">JPG, PNG, WebP, GIF, HEIC, MP4, MOV — up to 500MB per file</p>
-                <button type="button" className="mt-3 text-xs text-primary border border-primary/30 rounded-lg px-4 py-1.5 hover:bg-primary/5 transition-colors">
-                  Browse Files
-                </button>
-                <input ref={fileInputRef} type="file" multiple accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
-              </div>
-
-              <div className="flex items-center gap-3 rounded-xl border border-border bg-surface p-4">
-                <span className="text-2xl shrink-0">📊</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary">Bulk schedule via CSV</p>
-                  <p className="text-xs text-text-muted">Upload a CSV with content URLs, captions &amp; schedule times</p>
-                  {csvFile && <p className="text-xs text-primary mt-1">✓ {csvFile.name}</p>}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => csvInputRef.current?.click()}
-                  className="shrink-0 text-xs text-primary border border-primary/30 rounded-lg px-3 py-1.5 hover:bg-primary/5 transition-colors"
-                >
-                  Upload CSV
-                </button>
-                <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvChange} />
-              </div>
-
-              {uploadedFiles.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs text-text-muted font-medium uppercase tracking-wider">Queued files</p>
-                  {uploadedFiles.map((file, idx) => (
-                    <div key={idx} className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3">
-                      <span className="text-lg">{file.type.startsWith("video") ? "🎬" : "🖼️"}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-text-primary truncate">{file.name}</p>
-                        <p className="text-[10px] text-text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+                    <div className="grid gap-3 rounded-md bg-muted/30 p-3 text-sm lg:grid-cols-[1fr_auto]">
+                      <div>
+                        <p className="mb-1 flex items-center gap-1 font-medium">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Best-time recommendation
+                        </p>
+                        <p className="text-muted-foreground">
+                          {p.best_posting_window ?? "Connect analytics to refine timing."}
+                        </p>
+                        {p.schedule_reason && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {p.schedule_reason}
+                          </p>
+                        )}
                       </div>
-                      <button type="button" onClick={() => removeFile(idx)} className="text-text-muted hover:text-error transition-colors text-sm">✕</button>
+                      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                        {p.ideal_days && (
+                          <Badge variant="outline">{p.ideal_days}</Badge>
+                        )}
+                        {p.confidence_score != null && (
+                          <Badge variant="secondary">
+                            {confidenceLabel(Number(p.confidence_score))}
+                          </Badge>
+                        )}
+                        {p.social_account_id ? (
+                          <Badge>Connected</Badge>
+                        ) : (
+                          <Badge variant="destructive">Disconnected</Badge>
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Card>
 
-          {/* Step 3: AI description */}
-          <Card header={<h2 className="text-sm font-semibold text-text-primary">4 · Tell the AI what this content is about</h2>}>
-            <p className="text-xs text-text-muted mb-3">
-              Describe the topic, message, or goal — the AI will write SEO captions, titles, and hashtags based on your brand voice.
-            </p>
-            <textarea
-              value={contentDesc}
-              onChange={(e) => setContentDesc(e.target.value)}
-              placeholder="e.g. 'This video shows our new summer collection launch — target audience is women 25–35 who love fashion. Vibe is aspirational but approachable. Include a CTA to shop the link in bio.'"
-              rows={4}
-              className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-text-primary placeholder-text-muted outline-none focus:border-primary/40 transition-colors resize-none"
-            />
+                    <div className="flex flex-wrap gap-2">
+                      {!p.caption && (
+                        <Badge variant="destructive">
+                          <AlertCircle className="h-3 w-3" />
+                          {isEmailCampaign ? "needs email copy" : "needs caption"}
+                        </Badge>
+                      )}
+                      {!isEmailCampaign && !p.media_path && (
+                        <Badge variant="outline">
+                          <AlertCircle className="h-3 w-3" />
+                          needs media
+                        </Badge>
+                      )}
+                      {!p.social_account_id && (
+                        <Badge variant="destructive">
+                          <AlertCircle className="h-3 w-3" />
+                          account disconnected
+                        </Badge>
+                      )}
+                    </div>
 
-            {/* Hashtag toggle */}
-            <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3">
-              <div className="min-w-0 pr-3">
-                <p className="text-sm font-medium text-text-primary">Include hashtags</p>
-                <p className="text-xs text-text-muted mt-0.5">Adds SEO hashtags tuned to each platform&apos;s best practices.</p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={includeHashtags}
-                onClick={() => setIncludeHashtags((v) => !v)}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${includeHashtags ? "bg-primary" : "bg-white/10"}`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${includeHashtags ? "translate-x-6" : "translate-x-1"}`} />
-              </button>
-            </div>
+                    {p.comment_dm_enabled && (
+                      <div className="rounded-md border p-3 text-sm">
+                        <p className="mb-1 flex items-center gap-1 font-medium">
+                          <MessageCircle className="h-3.5 w-3.5" />
+                          Instagram comment to DM flow
+                        </p>
+                        <p className="text-muted-foreground">
+                          Reply: {p.comment_auto_reply || "Dynamic reply enabled"}
+                        </p>
+                        {p.dm_sequence && (
+                          <p className="mt-1 text-muted-foreground">
+                            DM: {p.dm_sequence}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-            <div className="mt-3 rounded-lg border border-border bg-surface-elevated px-4 py-3">
-              <p className="text-[11px] text-text-muted font-medium uppercase tracking-wider mb-1.5">AI will generate per platform:</p>
-              <div className="flex flex-wrap gap-2">
-                {["SEO Caption", "Title / Hook", ...(includeHashtags ? ["Platform-tuned hashtags"] : []), "Best posting time"].map((item) => (
-                  <span key={item} className="text-[11px] bg-primary/10 border border-primary/20 text-primary px-2 py-0.5 rounded-full">
-                    {item}
-                  </span>
-                ))}
-              </div>
-              <p className="text-[11px] text-text-muted mt-2">You can review &amp; edit every caption on the Calendar before it posts.</p>
-            </div>
-          </Card>
+                    <form action={updateCaptionAction} className="space-y-2">
+                      <input type="hidden" name="id" value={p.id} />
+                      <Textarea
+                        name="caption"
+                        rows={3}
+                        defaultValue={p.caption ?? ""}
+                        placeholder={isEmailCampaign ? "Edit email copy / subject notes" : "Edit caption"}
+                      />
+                      <Button variant="outline" size="sm" type="submit">
+                        Save caption
+                      </Button>
+                    </form>
 
-          {/* Submit */}
-          {scheduleError && (
-            <div className="rounded-lg border border-error/20 bg-error/5 px-4 py-3 text-xs text-error">
-              {scheduleError}
-            </div>
-          )}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-            <p className="text-xs text-text-muted">
-              {scheduling ? "Uploading media, writing SEO captions & scheduling…" : "Content → AI writes SEO captions → Scheduled at peak time → Posted ✓"}
-            </p>
-            <Button
-              type="submit"
-              variant="primary"
-              size="md"
-              loading={scheduling}
-              disabled={selectedPlatforms.length === 0 || (uploadedFiles.length === 0 && !csvFile)}
-            >
-              Queue for Posting →
-            </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {p.status === "scheduled" ? (
+                        <form action={unscheduleAction}>
+                          <input type="hidden" name="id" value={p.id} />
+                          <Button variant="outline" size="sm" type="submit">
+                            Unschedule
+                          </Button>
+                        </form>
+                      ) : (
+                        <form action={scheduleAction} className="flex items-center gap-2">
+                          <input type="hidden" name="id" value={p.id} />
+                          <Input
+                            name="scheduled_time"
+                            type="datetime-local"
+                            required
+                            className="h-8 w-auto"
+                          />
+                          <Button variant="outline" size="sm" type="submit">
+                            {p.social_account_id ? "Schedule" : "Save draft time"}
+                          </Button>
+                        </form>
+                      )}
+
+                      {!p.generated_content_id && (
+                        <form action={rematchAction}>
+                          <input type="hidden" name="id" value={p.id} />
+                          <Button variant="ghost" size="sm" type="submit">
+                            <RefreshCw className="mr-1 h-3.5 w-3.5" /> Re-match title
+                          </Button>
+                        </form>
+                      )}
+
+                      <form action={duplicatePostAction}>
+                        <input type="hidden" name="id" value={p.id} />
+                        <Button variant="ghost" size="sm" type="submit">
+                          <CopyPlus className="mr-1 h-3.5 w-3.5" /> Duplicate
+                        </Button>
+                      </form>
+
+                      <form action={deletePostAction} className="ml-auto">
+                        <input type="hidden" name="id" value={p.id} />
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          type="submit"
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </form>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
-        </form>
-      )}
-
-      {/* TAB: Calendar — scheduled content */}
-      {activeTab === "scheduled" && <ScheduledCalendar />}
-
-      {/* TAB: Best Times — computed from the user's real posting history */}
-      {activeTab === "insights" && (
-        <div className="space-y-6">
-          <BestTimes />
-
-          <Card>
-            <div className="flex items-start gap-3">
-              <span className="text-2xl shrink-0">📡</span>
-              <div>
-                <p className="text-sm font-semibold text-text-primary mb-1">How we calculate your best times</p>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  Autom8 looks at every post in your connected accounts&apos; history, groups them by day of week and hour posted,
-                  and ranks each window by the average engagement (likes, comments, shares, saves) your content earned there.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {["Your real post history", "Day-of-week patterns", "Hour-by-hour engagement", "Per-platform ranking"].map((item) => (
-                    <span key={item} className="text-[11px] bg-surface border border-border text-text-muted px-2 py-0.5 rounded-full">{item}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-5 text-center">
-            <p className="text-sm font-semibold text-text-primary mb-1">Ready to post at the perfect time?</p>
-            <p className="text-xs text-text-secondary mb-4">Switch to the Schedule tab and upload your content — we&apos;ll auto-select the best window.</p>
-            <Button variant="primary" size="md" onClick={() => setActiveTab("upload")}>
-              Schedule Content →
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* TAB: Platform Analytics (internal) */}
-      {activeTab === "analytics" && <PlatformAnalytics />}
+        )}
+      </div>
     </div>
   );
 }

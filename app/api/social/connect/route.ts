@@ -1,49 +1,110 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from "next/server";
 
-const FB_APP_ID = "1859085634713050"
-const SCOPES = [
-  "pages_show_list",
-  "business_management",
-  "instagram_basic",
-  "instagram_manage_comments",
-  "pages_read_engagement",
-  "pages_manage_metadata",
-  "pages_read_user_content",
-  "pages_manage_engagement",
-  "instagram_manage_contents",
-  "instagram_manage_messages",
-]
+import { getAuthContext } from "@/lib/auth";
+import { LOGIN_DISABLED } from "@/lib/auth-mode";
+import { isMetaOAuthConfigured, getMetaOAuthUrl } from "@/lib/social/meta";
+import { getPlatformDefinition } from "@/lib/social/platforms";
+import { getSiteOrigin } from "@/lib/site-url";
 
-// POST /api/social/connect — build Meta OAuth URL and return it to the client
-export async function POST(_request: NextRequest) {
-  const supabase = await createClient()
+export const runtime = "nodejs";
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
+function canonicalRedirect(request: Request, origin: string) {
+  if (process.env.VERCEL_ENV !== "production") return null;
 
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const incoming = new URL(request.url);
+  const incomingOrigin = `${incoming.protocol}//${incoming.host}`;
+  if (incomingOrigin === origin) return null;
+
+  return NextResponse.redirect(`${origin}${incoming.pathname}${incoming.search}`);
+}
+
+function redirectWithMessage(origin: string, reason: string) {
+  const params = new URLSearchParams({
+    connect: "error",
+    reason,
+  });
+  return NextResponse.redirect(`${origin}/agents?${params.toString()}`);
+}
+
+export async function GET(request: Request) {
+  const origin = getSiteOrigin(request);
+  const canonical = canonicalRedirect(request, origin);
+  if (canonical) return canonical;
+
+  const context = await getAuthContext();
+  if (!context) {
+    return NextResponse.redirect(
+      `${origin}${LOGIN_DISABLED ? "/dashboard?connect=session_error" : "/login"}`,
+    );
+  }
+  const { user, supabase } = context;
+
+  const url = new URL(request.url);
+  let agentId = url.searchParams.get("agent_id") ?? "";
+  const platform = url.searchParams.get("platform") ?? "instagram";
+  const platformDefinition = getPlatformDefinition(platform);
+
+  if (!agentId) {
+    const { data: firstAgent } = await supabase
+      .from("marketing_os_writing_agents")
+      .select("id")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!firstAgent?.id) {
+      return redirectWithMessage(
+        origin,
+        "Create or open a Writing Agent before connecting social accounts.",
+      );
+    }
+
+    agentId = firstAgent.id;
+  }
+  if (platformDefinition?.disabled) {
+    return NextResponse.redirect(
+      `${origin}/agents/${agentId}?connect=api_setup`,
+    );
+  }
+  if (platformDefinition && !platformDefinition.connectable) {
+    return NextResponse.redirect(
+      `${origin}/agents/${agentId}?tab=connections&connect=coming_soon`,
+    );
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.autom8ig.io'
-  const redirectUri = `${appUrl}/api/social/callback`
+  if (platform === "instagram" || platform === "facebook") {
+    if (!isMetaOAuthConfigured()) {
+      return NextResponse.redirect(
+        `${origin}/agents/${agentId}?tab=connections&connect=not_configured`,
+      );
+    }
+    const redirectUri = `${origin}/api/social/callback`;
+    const state = Buffer.from(
+      JSON.stringify({ agent_id: agentId, platform, uid: user.id }),
+    ).toString("base64url");
+    return NextResponse.redirect(getMetaOAuthUrl(state, redirectUri));
+  }
 
-  const state = encodeURIComponent(
-    JSON.stringify({
-      userId: user.id,
-      returnUrl: `${appUrl}/dashboard?social_connected=true`,
-    })
-  )
+  if (platform === "youtube") {
+    return NextResponse.redirect(
+      `${origin}/api/social/youtube/connect?agent_id=${encodeURIComponent(agentId)}`,
+    );
+  }
 
-  const authUrl = new URL('https://www.facebook.com/v23.0/dialog/oauth')
-  authUrl.searchParams.set('client_id', FB_APP_ID)
-  authUrl.searchParams.set('redirect_uri', redirectUri)
-  authUrl.searchParams.set('scope', SCOPES.join(','))
-  authUrl.searchParams.set('response_type', 'code')
-  authUrl.searchParams.set('state', state)
+  if (platform === "x") {
+    return NextResponse.redirect(
+      `${origin}/api/social/connect/x?agent_id=${encodeURIComponent(agentId)}`,
+    );
+  }
 
-  return NextResponse.json({ authUrl: authUrl.toString() })
+  if (platform === "mailchimp") {
+    return NextResponse.redirect(
+      `${origin}/api/social/mailchimp/connect?agent_id=${encodeURIComponent(agentId)}`,
+    );
+  }
+
+  // Other platforms not yet wired.
+  return NextResponse.redirect(
+    `${origin}/agents/${agentId}?tab=connections&connect=coming_soon`,
+  );
 }

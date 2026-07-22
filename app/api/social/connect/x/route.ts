@@ -1,66 +1,150 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { cookies } from 'next/headers'
-import crypto from 'crypto'
+import crypto from "crypto";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 
-const X_CLIENT_ID = process.env.X_CLIENT_ID ?? ''
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.autom8ig.io'
-const REDIRECT_URI = `${APP_URL}/api/social/callback/x`
+import { getAuthContext } from "@/lib/auth";
+import { LOGIN_DISABLED } from "@/lib/auth-mode";
+import { getSiteOrigin } from "@/lib/site-url";
 
-const SCOPES = [
-  'tweet.read',
-  'tweet.write',
-  'users.read',
-  'offline.access',
-]
+export const runtime = "nodejs";
+
+const DEFAULT_X_AUTH_URL = "https://twitter.com/i/oauth2/authorize";
+const X_READ_SCOPES = ["tweet.read", "users.read"];
+const X_REFRESH_SCOPES = ["offline.access"];
+const X_WRITE_SCOPES = ["tweet.write", "media.write"];
+
+function getXScopes() {
+  const includeRefreshScope = process.env.X_ENABLE_REFRESH === "1";
+  const includeWriteScopes = process.env.X_ENABLE_POSTING === "1";
+  return [
+    ...X_READ_SCOPES,
+    ...(includeRefreshScope ? X_REFRESH_SCOPES : []),
+    ...(includeWriteScopes ? X_WRITE_SCOPES : []),
+  ];
+}
+
+function getXAuthUrl() {
+  return process.env.X_AUTHORIZE_URL?.trim() || DEFAULT_X_AUTH_URL;
+}
+
+function canonicalRedirect(request: Request, origin: string) {
+  if (process.env.VERCEL_ENV !== "production") return null;
+
+  const incoming = new URL(request.url);
+  const incomingOrigin = `${incoming.protocol}//${incoming.host}`;
+  if (incomingOrigin === origin) return null;
+
+  return NextResponse.redirect(`${origin}${incoming.pathname}${incoming.search}`);
+}
 
 function base64url(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
-async function buildXAuthResponse(request: NextRequest, asRedirect: boolean) {
-  const supabase = await createClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
+function redirectToAgent(origin: string, agentId: string, reason: string) {
+  return NextResponse.redirect(
+    `${origin}/agents/${agentId}?tab=connections&connect=${reason}`,
+  );
+}
 
-  if (error || !user) {
-    if (asRedirect) return NextResponse.redirect(new URL('/login', APP_URL))
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+function clientIdHint(value: string | undefined) {
+  if (!value) return null;
+  if (value.length <= 10) return `${value.slice(0, 2)}...${value.slice(-2)}`;
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+export async function GET(request: Request) {
+  const origin = getSiteOrigin(request);
+  const canonical = canonicalRedirect(request, origin);
+  if (canonical) return canonical;
+
+  const context = await getAuthContext();
+  if (!context) {
+    return NextResponse.redirect(
+      `${origin}${LOGIN_DISABLED ? "/dashboard?connect=session_error" : "/login"}`,
+    );
+  }
+  const { user, supabase } = context;
+
+  const url = new URL(request.url);
+  let agentId = url.searchParams.get("agent_id") ?? "";
+  if (!agentId) {
+    const { data: firstAgent } = await supabase
+      .from("marketing_os_writing_agents")
+      .select("id")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!firstAgent?.id) {
+      return NextResponse.redirect(
+        `${origin}/agents?connect=error&reason=${encodeURIComponent(
+          "Create or open a Writing Agent before connecting X.",
+        )}`,
+      );
+    }
+
+    agentId = firstAgent.id;
+  }
+  const { data: agent } = await supabase
+    .from("marketing_os_writing_agents")
+    .select("id")
+    .eq("id", agentId)
+    .maybeSingle();
+  if (!agent) return redirectToAgent(origin, agentId, "error");
+
+  const clientId = process.env.X_CLIENT_ID?.trim();
+  if (!clientId) {
+    return redirectToAgent(origin, agentId, "not_configured");
   }
 
-  const codeVerifier = base64url(crypto.randomBytes(32))
+  const codeVerifier = base64url(crypto.randomBytes(32));
   const codeChallenge = base64url(
-    crypto.createHash('sha256').update(codeVerifier).digest()
-  )
-  const state = base64url(crypto.randomBytes(16))
+    crypto.createHash("sha256").update(codeVerifier).digest(),
+  );
+  const state = base64url(crypto.randomBytes(16));
+  const redirectUri = `${origin}/api/social/callback/x`;
+  const scopes = getXScopes();
 
-  const cookieStore = await cookies()
-  cookieStore.set('x_pkce', JSON.stringify({ codeVerifier, state, userId: user.id }), {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-    maxAge: 600,
-    path: '/',
-  })
+  const cookieStore = await cookies();
+  cookieStore.set(
+    "marketing_os_x_pkce",
+    JSON.stringify({ codeVerifier, state, agentId, uid: user.id }),
+    {
+      httpOnly: true,
+      secure: origin.startsWith("https://"),
+      sameSite: "lax",
+      maxAge: 600,
+      path: "/",
+    },
+  );
 
-  const authUrl = new URL('https://twitter.com/i/oauth2/authorize')
-  authUrl.searchParams.set('response_type', 'code')
-  authUrl.searchParams.set('client_id', X_CLIENT_ID)
-  authUrl.searchParams.set('redirect_uri', REDIRECT_URI)
-  authUrl.searchParams.set('scope', SCOPES.join(' '))
-  authUrl.searchParams.set('state', state)
-  authUrl.searchParams.set('code_challenge', codeChallenge)
-  authUrl.searchParams.set('code_challenge_method', 'S256')
+  const authUrl = new URL(getXAuthUrl());
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("scope", scopes.join(" "));
+  authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("code_challenge", codeChallenge);
+  authUrl.searchParams.set("code_challenge_method", "S256");
 
-  if (asRedirect) return NextResponse.redirect(authUrl)
-  return NextResponse.json({ authUrl: authUrl.toString() })
-}
+  if (url.searchParams.get("debug") === "1") {
+    return NextResponse.json({
+      ok: true,
+      origin,
+      incoming_origin: new URL(request.url).origin,
+      redirect_uri: redirectUri,
+      scopes,
+      has_x_client_id: Boolean(clientId),
+      x_client_id_hint: clientIdHint(clientId),
+      has_x_client_secret: Boolean(process.env.X_CLIENT_SECRET?.trim()),
+      x_enable_refresh: process.env.X_ENABLE_REFRESH === "1",
+      x_enable_posting: process.env.X_ENABLE_POSTING === "1",
+      authorize_url: authUrl.toString(),
+      next_step:
+        "In X Developer Portal, OAuth 2.0 Client ID must match this hint, the callback URL must exactly match redirect_uri, and permissions must cover the listed scopes.",
+    });
+  }
 
-// GET /api/social/connect/x — direct navigation (like YouTube connect)
-export async function GET(request: NextRequest) {
-  return buildXAuthResponse(request, true)
-}
-
-// POST /api/social/connect/x — called from JS fetch, returns JSON with authUrl
-export async function POST(request: NextRequest) {
-  return buildXAuthResponse(request, false)
+  return NextResponse.redirect(authUrl.toString());
 }

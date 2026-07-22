@@ -1,155 +1,91 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/service'
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
-// GET /api/social/callback — Meta OAuth code exchange, stores tokens in Supabase directly
-export async function GET(request: NextRequest) {
-  const FB_APP_ID = process.env.NEXT_PUBLIC_FB_APP_ID ?? '1859085634713050'
-  const FB_APP_SECRET = process.env.FB_APP_SECRET ?? ''
-  const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? `https://${request.headers.get('host')}`
-  const REDIRECT_URI = `${APP_URL}/api/social/callback`
-  const { searchParams } = new URL(request.url)
-  const code = searchParams.get('code')
-  const state = searchParams.get('state')
-  const errorParam = searchParams.get('error')
+import { getAuthContext } from "@/lib/auth";
+import { LOGIN_DISABLED } from "@/lib/auth-mode";
+import { exchangeMetaCodeForLongLivedToken } from "@/lib/social/meta";
+import { encryptToken } from "@/lib/crypto";
+import { getSiteOrigin } from "@/lib/site-url";
 
+export const runtime = "nodejs";
+
+export async function GET(request: Request) {
+  const origin = getSiteOrigin(request);
+  const context = await getAuthContext();
+  if (!context) {
+    return NextResponse.redirect(
+      `${origin}${LOGIN_DISABLED ? "/dashboard?connect=session_error" : "/login"}`,
+    );
+  }
+  const { user, supabase } = context;
+
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const stateRaw = url.searchParams.get("state");
+  const errorParam = url.searchParams.get("error");
   if (errorParam) {
-    return NextResponse.redirect(new URL(`/dashboard?social_error=${encodeURIComponent(errorParam)}`, APP_URL))
+    return NextResponse.redirect(
+      `${origin}/agents?connect=error&reason=${encodeURIComponent(errorParam)}`,
+    );
   }
-  if (!code || !state) {
-    return NextResponse.redirect(new URL('/dashboard?social_error=missing_params', APP_URL))
+  if (!code || !stateRaw) {
+    return NextResponse.redirect(`${origin}/agents?connect=error`);
   }
 
-  let stateData: { userId: string; returnUrl?: string }
+  let state: { agent_id: string; platform: string; uid: string };
   try {
-    stateData = JSON.parse(decodeURIComponent(state))
+    state = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf8"));
   } catch {
-    return NextResponse.redirect(new URL('/dashboard?social_error=invalid_state', APP_URL))
+    return NextResponse.redirect(`${origin}/agents?connect=error`);
   }
 
-  // Use session user as the authoritative userId (state can be tampered)
-  // Fall back to state userId if no session (e.g. cookie not passed in redirect)
-  const sessionSupabase = await createClient()
-  const { data: { user: sessionUser } } = await sessionSupabase.auth.getUser()
-  const userId = sessionUser?.id ?? stateData.userId
-  console.log('[callback] userId from session:', sessionUser?.id, '| from state:', stateData.userId)
+  // CSRF: state must belong to the signed-in user.
+  if (state.uid !== user.id) {
+    return NextResponse.redirect(`${origin}/agents?connect=error`);
+  }
+
+  // Verify agent ownership.
+  const { data: agent } = await supabase
+    .from("marketing_os_writing_agents")
+    .select("id")
+    .eq("id", state.agent_id)
+    .maybeSingle();
+  if (!agent) return NextResponse.redirect(`${origin}/agents?connect=error`);
 
   try {
-    // 1. Exchange code for short-lived token
-    const tokenRes = await fetch(
-      `https://graph.facebook.com/v23.0/oauth/access_token?` +
-      `client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}` +
-      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code=${code}`
-    )
-    const tokenData = await tokenRes.json()
-    if (!tokenData.access_token) throw new Error('No access token returned')
+    const longLivedUserToken = await exchangeMetaCodeForLongLivedToken(
+      code,
+      `${origin}/api/social/callback`,
+    );
+    const cookieStore = await cookies();
+    cookieStore.set(
+      "marketing_os_meta_select",
+      encryptToken(
+        JSON.stringify({
+          token: longLivedUserToken,
+          agent_id: state.agent_id,
+          platform: state.platform,
+          uid: user.id,
+        }),
+      ),
+      {
+        httpOnly: true,
+        secure: origin.startsWith("https://"),
+        sameSite: "lax",
+        maxAge: 600,
+        path: "/",
+      },
+    );
 
-    // 2. Exchange for long-lived token (60-day)
-    const longLivedRes = await fetch(
-      `https://graph.facebook.com/v23.0/oauth/access_token?` +
-      `grant_type=fb_exchange_token&client_id=${FB_APP_ID}` +
-      `&client_secret=${FB_APP_SECRET}&fb_exchange_token=${tokenData.access_token}`
-    )
-    const longLivedData = await longLivedRes.json()
-    const longToken = longLivedData.access_token ?? tokenData.access_token
-
-    // 3. Get connected Facebook Pages
-    const pagesRes = await fetch(
-      `https://graph.facebook.com/v23.0/me/accounts?access_token=${longToken}`
-    )
-    const pagesData = await pagesRes.json()
-    const pages: Array<{ id: string; name: string; access_token: string }> = pagesData.data ?? []
-    console.log('[callback] pages found:', pages.length, JSON.stringify(pagesData).slice(0, 200))
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const svc = createServiceClient() as any
-
-    let savedIgBusinessId: string | null = null
-
-    for (const page of pages) {
-      const igRes = await fetch(
-        `https://graph.facebook.com/v23.0/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`
-      )
-      const igData = await igRes.json()
-      const igBusinessId = igData.instagram_business_account?.id
-      console.log('[callback] page', page.id, 'ig_business_id:', igBusinessId)
-      if (!igBusinessId) continue
-
-      await saveAccount(svc, userId, igBusinessId, page.access_token, page.id)
-      savedIgBusinessId = igBusinessId
-      break // one IG account is enough
-    }
-
-    // Fallback: if pages loop saved nothing, use the known IG business ID with user token
-    if (!savedIgBusinessId) {
-      const { data: brand } = await svc
-        .from('brand_profiles')
-        .select('ig_business_id')
-        .eq('user_id', userId)
-        .maybeSingle()
-
-      const igBusinessId = brand?.ig_business_id
-      console.log('[callback] fallback ig_business_id:', igBusinessId, 'userId:', userId)
-
-      if (igBusinessId) {
-        await saveAccount(svc, userId, igBusinessId, longToken, null)
-        savedIgBusinessId = igBusinessId
-      }
-    }
-
-    console.log('[callback] final savedIgBusinessId:', savedIgBusinessId)
-    return NextResponse.redirect(new URL('/dashboard?social_connected=true', APP_URL))
+    return NextResponse.redirect(
+      `${origin}/social/meta/select?agent_id=${encodeURIComponent(
+        state.agent_id,
+      )}&platform=${encodeURIComponent(state.platform)}`,
+    );
   } catch (err) {
-    console.error('OAuth callback error:', err)
-    return NextResponse.redirect(new URL('/dashboard?social_error=token_exchange_failed', APP_URL))
+    const message = err instanceof Error ? err.message : "connect_failed";
+    return NextResponse.redirect(
+      `${origin}/agents/${state.agent_id}?tab=connections&connect=error&reason=${encodeURIComponent(message)}`,
+    );
   }
-}
-
-async function saveAccount(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  svc: any,
-  userId: string,
-  igBusinessId: string,
-  token: string,
-  pageId: string | null
-): Promise<void> {
-  // Get IG profile details
-  const igProfileRes = await fetch(
-    `https://graph.facebook.com/v23.0/${igBusinessId}?fields=username,profile_picture_url&access_token=${token}`
-  )
-  const igProfile = await igProfileRes.json()
-  console.log('[callback] ig profile:', igProfile.username ?? igProfile.error?.message)
-
-  // Check for existing row
-  const { data: existing } = await svc
-    .from('social_accounts')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('platform', 'instagram')
-    .maybeSingle()
-
-  const payload = {
-    user_id: userId,
-    platform: 'instagram',
-    external_account_id: igBusinessId,
-    page_token_encrypted: token,
-    page_id: pageId,
-    username: igProfile.username ?? null,
-    profile_picture_url: igProfile.profile_picture_url ?? null,
-    connected_at: new Date().toISOString(),
-    status: 'active',
-  }
-
-  const { error } = existing
-    ? await svc.from('social_accounts').update(payload).eq('id', existing.id)
-    : await svc.from('social_accounts').insert(payload)
-
-  console.log('[callback] saveAccount error:', error ? JSON.stringify(error) : 'none')
-  if (error) throw new Error(`saveAccount failed: ${JSON.stringify(error)}`)
-
-  // Update brand_profiles
-  await svc.from('brand_profiles').update({
-    ig_business_id: igBusinessId,
-    ig_username: igProfile.username ?? null,
-  }).eq('user_id', userId)
 }
