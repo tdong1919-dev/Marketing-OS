@@ -1,17 +1,13 @@
-interface SkeletonProps {
-  className?: string;
-  count?: number;
+import { cn } from "@/lib/utils"
+
+function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="skeleton"
+      className={cn("animate-pulse rounded-md bg-muted", className)}
+      {...props}
+    />
+  )
 }
 
-export default function Skeleton({ className = "", count = 1 }: SkeletonProps) {
-  return (
-    <>
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className={`animate-pulse bg-surface-2 rounded-lg ${className}`}
-        />
-      ))}
-    </>
-  );
-}
+export { Skeleton }

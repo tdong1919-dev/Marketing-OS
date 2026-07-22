@@ -1,354 +1,203 @@
-"use client";
-import { useState, useMemo, useEffect, useCallback } from "react";
-import Button from "@/components/ui/Button";
+import { Inbox } from "lucide-react";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-interface LogItem {
-  id: string; kind: "comment" | "dm"; platform: string;
-  who: string; incoming: string; response: string; ts: string | null;
-}
-interface ReviewItem {
-  id: string; kind: "comment" | "dm"; refId: string; externalId: string | null;
-  platform: string; who: string; incoming: string; draft: string; reason: string; ts: string | null;
-}
-type Tab = "posted" | "review" | "approved";
+import { requireUser } from "@/lib/auth";
+import {
+  asRows,
+  formatDate,
+  isOpsSchemaMissing,
+  opsTable,
+  titleCase,
+  type CampaignRow,
+  type ClientOption,
+} from "@/lib/marketing-os/operations";
+import { EmptyState } from "@/components/empty-state";
+import { OpsSchemaNotice } from "@/components/ops-schema-notice";
+import { PageHeader } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { updateInboxThreadStatusAction } from "./actions";
 
-const PLATFORM: Record<string, { label: string; icon: string; text: string }> = {
-  instagram: { label: "Instagram", icon: "📸", text: "text-fuchsia-400" },
-  facebook:  { label: "Facebook",  icon: "👤", text: "text-blue-400" },
-  x:         { label: "X",         icon: "✕",  text: "text-zinc-300" },
-  youtube:   { label: "YouTube",   icon: "▶",  text: "text-red-400" },
-  reddit:    { label: "Reddit",    icon: "🟠", text: "text-orange-400" },
+export const metadata = { title: "Inbox · Jidoka Marketing Team OS" };
+
+type InboxThread = {
+  id: string;
+  campaign_id?: string | null;
+  client_id: string | null;
+  agent_id: string | null;
+  platform: string;
+  channel: string;
+  participant_username: string | null;
+  status: string;
+  review_reason: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
-const fmtTs = (ts: string | null) =>
-  ts ? new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+type InboxMessage = {
+  id: string;
+  thread_id: string;
+  role: string;
+  body: string;
+  status: string;
+  created_at: string;
+};
 
-function ChannelTag({ kind, platform }: { kind: "comment" | "dm"; platform: string }) {
-  const p = PLATFORM[platform] ?? { label: platform, icon: "📄", text: "text-text-muted" };
-  return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${p.text}`}>
-      <span>{p.icon}</span>{p.label} · {kind === "dm" ? "DM" : "Comment"}
-    </span>
-  );
-}
+export default async function InboxPage() {
+  const { user, supabase } = await requireUser();
+  const threadsResult = await opsTable(supabase, "marketing_os_inbox_threads")
+    .select("id, campaign_id, client_id, agent_id, platform, channel, participant_username, status, review_reason, last_message_at, created_at, updated_at")
+    .eq("owner_id", user.id)
+    .order("updated_at", { ascending: false });
+  const schemaMissing = isOpsSchemaMissing(threadsResult.error);
 
-export default function InboxPage() {
-  const [posted, setPosted] = useState<LogItem[]>([]);
-  const [needsReview, setNeedsReview] = useState<ReviewItem[]>([]);
-  const [approved, setApproved] = useState<LogItem[]>([]);
-  const [platforms, setPlatforms] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("posted");
-  const [platformFilter, setPlatformFilter] = useState("all");
-  const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState("");
+  const [fallbackThreads, campaignsResult, clientsResult] = await Promise.all([
+    schemaMissing
+      ? opsTable(supabase, "marketing_os_inbox_threads")
+          .select("id, client_id, agent_id, platform, channel, participant_username, status, review_reason, last_message_at, created_at, updated_at")
+          .eq("owner_id", user.id)
+          .order("updated_at", { ascending: false })
+      : Promise.resolve({ data: null }),
+    schemaMissing
+      ? Promise.resolve({ data: null })
+      : opsTable(supabase, "marketing_os_campaigns")
+          .select(
+            "id, owner_id, client_id, name, campaign_type, status, stage, health, priority, goal, primary_kpi, target_audience, owner_name, budget, actual_spend, expected_revenue, attributed_revenue, lead_goal, leads_count, start_date, end_date, notes, created_at, updated_at",
+          )
+          .eq("owner_id", user.id),
+    supabase
+      .from("marketing_os_clients")
+      .select("id, name, industry")
+      .eq("owner_id", user.id),
+  ]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/inbox");
-      const json = await res.json();
-      setPosted(json.posted ?? []);
-      setNeedsReview(json.needsReview ?? []);
-      setApproved(json.approved ?? []);
-      setPlatforms(json.platforms ?? []);
-    } catch {
-      /* empty state shown */
-    } finally {
-      setLoading(false);
+  const threads = schemaMissing
+    ? asRows<InboxThread>(fallbackThreads.data)
+    : asRows<InboxThread>(threadsResult.data);
+  const messagesResult =
+    threads.length > 0
+      ? await opsTable(supabase, "marketing_os_inbox_messages")
+          .select("id, thread_id, role, body, status, created_at")
+          .eq("owner_id", user.id)
+          .in(
+            "thread_id",
+            threads.map((thread) => thread.id),
+          )
+          .order("created_at", { ascending: false })
+      : { data: null, error: null };
+  const messages = asRows<InboxMessage>(messagesResult.data);
+  const latestByThread = new Map<string, InboxMessage>();
+  for (const message of messages) {
+    if (!latestByThread.has(message.thread_id)) {
+      latestByThread.set(message.thread_id, message);
     }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const byFilters = <T extends { platform: string; who: string; incoming: string }>(items: T[], extra: (i: T) => string) => {
-    let r = items;
-    if (platformFilter !== "all") r = r.filter((i) => i.platform === platformFilter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      r = r.filter((i) => i.who.toLowerCase().includes(q) || i.incoming.toLowerCase().includes(q) || extra(i).toLowerCase().includes(q));
-    }
-    return r;
-  };
-
-  /* eslint-disable react-hooks/exhaustive-deps */
-  const postedF = useMemo(() => byFilters(posted, (i) => i.response), [posted, platformFilter, search]);
-  const approvedF = useMemo(() => byFilters(approved, (i) => i.response), [approved, platformFilter, search]);
-  const reviewF = useMemo(() => byFilters(needsReview, (i) => i.draft), [needsReview, platformFilter, search]);
-  /* eslint-enable react-hooks/exhaustive-deps */
-
-  const counts = { posted: posted.length, review: needsReview.length, approved: approved.length };
-
-  // Currently selected item for the detail panel
-  const selectedReview = tab === "review" ? reviewF.find((i) => i.id === selectedId) ?? reviewF[0] : undefined;
-  const selectedLog = tab !== "review"
-    ? (tab === "posted" ? postedF : approvedF).find((i) => i.id === selectedId) ?? (tab === "posted" ? postedF : approvedF)[0]
-    : undefined;
-
-  // When a review item is selected, prime the editable draft.
-  useEffect(() => {
-    if (selectedReview) { setDraft(selectedReview.draft); setActionError(""); }
-  }, [selectedReview?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const act = async (item: ReviewItem, action: "approve" | "reject") => {
-    setBusy(true); setActionError("");
-    try {
-      const res = await fetch("/api/inbox/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: item.kind, refId: item.refId, text: draft, action }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error || "Action failed");
-      setSelectedId(null);
-      await load();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Action failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const TABS: { id: Tab; label: string; count: number }[] = [
-    { id: "posted", label: "Posted", count: counts.posted },
-    { id: "review", label: "Needs Review", count: counts.review },
-    { id: "approved", label: "Approved", count: counts.approved },
-  ];
-
-  const list = tab === "review" ? reviewF : tab === "posted" ? postedF : approvedF;
-  const emptyCopy = tab === "review"
-    ? { icon: "✅", title: "Nothing to review", sub: "Escalated comments & DMs that need your approval show up here." }
-    : tab === "approved"
-    ? { icon: "📨", title: "No approved items yet", sub: "Replies you approve & send from Needs Review appear here." }
-    : { icon: "📜", title: "No responses yet", sub: "Every comment & DM Autom8 auto-responds to is logged here." };
+  }
+  const campaigns = schemaMissing
+    ? []
+    : asRows<CampaignRow>(campaignsResult.data);
+  const clients = (clientsResult.data ?? []) as ClientOption[];
+  const campaignById = new Map(campaigns.map((item) => [item.id, item]));
+  const clientById = new Map(clients.map((item) => [item.id, item]));
 
   return (
-    <div className="flex h-full bg-bg">
-      {/* Left column: list */}
-      <div className="flex flex-col w-full md:w-80 lg:w-96 border-r border-border shrink-0 overflow-hidden">
-        <div className="p-5 border-b border-border">
-          <h1 className="text-2xl font-semibold tracking-tight text-text-primary mb-1">Inbox</h1>
-          <p className="text-xs text-text-muted">Every AI response, plus anything that needs your approval.</p>
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Inbox"
+        description="Review inbound comments, DMs, client messages, and AI-drafted replies before they move forward."
+      />
 
-        {/* Search */}
-        <div className="px-4 py-3 border-b border-border">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search…"
-            className="w-full bg-surface border border-border rounded-xl px-3 py-2 text-sm text-text-primary placeholder-text-muted outline-none focus:border-primary/40 transition-colors"
-          />
-        </div>
+      {schemaMissing && <OpsSchemaNotice title="Campaign inbox links need migration 0016" />}
 
-        {/* Tabs */}
-        <div className="flex gap-1 px-3 py-2 border-b border-border">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => { setTab(t.id); setSelectedId(null); }}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all
-                ${tab === t.id ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-secondary hover:bg-surface-elevated"}`}
-            >
-              {t.label}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab === t.id ? "bg-primary/20 text-primary" : "bg-border text-text-muted"}`}>{t.count}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Platform filter */}
-        {platforms.length > 1 && (
-          <div className="px-4 py-2.5 border-b border-border">
-            <select
-              value={platformFilter}
-              onChange={(e) => setPlatformFilter(e.target.value)}
-              className="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs text-text-primary outline-none focus:border-primary/40 cursor-pointer"
-            >
-              <option value="all">All platforms</option>
-              {platforms.map((p) => <option key={p} value={p}>{PLATFORM[p]?.label ?? p}</option>)}
-            </select>
-          </div>
-        )}
-
-        {/* List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="text-4xl mb-3 animate-pulse">💬</div>
-              <p className="text-sm font-medium text-text-secondary">Loading…</p>
-            </div>
-          ) : list.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center px-4">
-              <div className="text-4xl mb-3">{emptyCopy.icon}</div>
-              <p className="text-sm font-medium text-text-secondary">{emptyCopy.title}</p>
-              <p className="text-xs text-text-muted mt-1">{emptyCopy.sub}</p>
-            </div>
-          ) : (
-            list.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setSelectedId(item.id)}
-                className={`w-full text-left p-3 rounded-xl border transition-all
-                  ${selectedId === item.id ? "border-primary/40 bg-primary/5" : "border-border bg-surface hover:bg-surface-elevated"}`}
-              >
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <ChannelTag kind={item.kind} platform={item.platform} />
-                  <span className="text-[10px] text-text-muted shrink-0">{fmtTs(item.ts)}</span>
-                </div>
-                <p className="text-xs font-medium text-text-primary truncate">{item.who}</p>
-                <p className="text-[11px] text-text-muted line-clamp-2 mt-0.5">{item.incoming || "—"}</p>
-                {tab === "review" && (
-                  <span className="inline-block mt-1.5 text-[10px] text-warning bg-warning/10 border border-warning/20 px-1.5 py-0.5 rounded-full">
-                    {(item as ReviewItem).reason}
-                  </span>
-                )}
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Right column: detail */}
-      <div className="hidden md:flex flex-1 flex-col overflow-hidden bg-bg">
-        {tab === "review" ? (
-          selectedReview ? (
-            <ReviewDetail item={selectedReview} draft={draft} setDraft={setDraft} busy={busy} error={actionError}
-              onApprove={() => act(selectedReview, "approve")} onReject={() => act(selectedReview, "reject")} />
-          ) : <EmptyDetail icon="✅" text="Nothing needs review" sub="You're all caught up." />
-        ) : selectedLog ? (
-          <LogDetail item={selectedLog} />
-        ) : <EmptyDetail icon="📜" text="Select an item" sub="Pick a response to see the full exchange." />}
-      </div>
-
-      {/* Mobile detail overlay */}
-      {selectedId && (
-        <div className="fixed inset-0 z-50 md:hidden bg-bg overflow-y-auto">
-          <div className="p-4">
-            <button onClick={() => setSelectedId(null)} className="flex items-center gap-2 text-sm text-text-secondary mb-4 hover:text-text-primary">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-              Back to Inbox
-            </button>
-            {tab === "review" && selectedReview ? (
-              <ReviewDetail item={selectedReview} draft={draft} setDraft={setDraft} busy={busy} error={actionError}
-                onApprove={() => act(selectedReview, "approve")} onReject={() => act(selectedReview, "reject")} />
-            ) : selectedLog ? <LogDetail item={selectedLog} /> : null}
-          </div>
+      {threads.length === 0 ? (
+        <EmptyState
+          icon={Inbox}
+          title="Inbox is clear"
+          description="Inbound social review threads and client communication items will appear here."
+        />
+      ) : (
+        <div className="space-y-3">
+          {threads.map((thread) => {
+            const latest = latestByThread.get(thread.id);
+            const campaign = thread.campaign_id
+              ? campaignById.get(thread.campaign_id)
+              : null;
+            const client = thread.client_id ? clientById.get(thread.client_id) : null;
+            return (
+              <Card key={thread.id}>
+                <CardContent className="space-y-4 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">
+                        {thread.participant_username ??
+                          campaign?.name ??
+                          client?.name ??
+                          "Inbox thread"}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {titleCase(thread.platform)} · {titleCase(thread.channel)} ·{" "}
+                        {campaign?.name ?? client?.name ?? "No campaign"} ·{" "}
+                        {formatDate(thread.last_message_at ?? thread.updated_at)}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={
+                        thread.status === "needs_review"
+                          ? "destructive"
+                          : thread.status === "resolved"
+                            ? "default"
+                            : "outline"
+                      }
+                    >
+                      {titleCase(thread.status)}
+                    </Badge>
+                  </div>
+                  {thread.review_reason && (
+                    <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                      {thread.review_reason}
+                    </p>
+                  )}
+                  {latest && (
+                    <p className="text-sm text-muted-foreground">
+                      Latest {titleCase(latest.role)}: {latest.body}
+                    </p>
+                  )}
+                  <form
+                    action={updateInboxThreadStatusAction}
+                    className="grid gap-2 lg:grid-cols-[1fr_auto_auto_auto_auto]"
+                  >
+                    <input type="hidden" name="id" value={thread.id} />
+                    <input
+                      type="hidden"
+                      name="campaign_id"
+                      value={thread.campaign_id ?? ""}
+                    />
+                    <Textarea name="note" placeholder="Review note" />
+                    {["approved", "rejected", "posted", "resolved"].map((status) => (
+                      <Button
+                        key={status}
+                        type="submit"
+                        name="status"
+                        value={status}
+                        variant={
+                          status === "rejected"
+                            ? "destructive"
+                            : status === "approved"
+                              ? "default"
+                              : "outline"
+                        }
+                      >
+                        {titleCase(status)}
+                      </Button>
+                    ))}
+                  </form>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
-    </div>
-  );
-}
-
-// ─── Detail panels ────────────────────────────────────────────────────────────
-function Exchange({ who, incoming, response, label }: { who: string; incoming: string; response: string; label: string }) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-start gap-2">
-        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
-          {who.replace("@", "").slice(0, 2).toUpperCase()}
-        </div>
-        <div className="flex-1 bg-surface rounded-xl px-3 py-2">
-          <p className="text-xs font-medium text-text-secondary mb-0.5">{who}</p>
-          <p className="text-xs text-text-primary whitespace-pre-wrap">{incoming || "—"}</p>
-        </div>
-      </div>
-      <div className="flex items-start gap-2 pl-6">
-        <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary text-[10px] font-bold shrink-0 mt-0.5">AI</div>
-        <div className="flex-1 bg-primary/5 border border-primary/10 rounded-xl px-3 py-2">
-          <p className="text-xs font-medium text-primary/70 mb-0.5">{label}</p>
-          <p className="text-xs text-text-primary whitespace-pre-wrap">{response || "—"}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LogDetail({ item }: { item: LogItem }) {
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <ChannelTag kind={item.kind} platform={item.platform} />
-          <span className="text-xs text-text-muted">{fmtTs(item.ts)}</span>
-        </div>
-        <div className="rounded-2xl border border-border bg-surface-elevated p-5">
-          <Exchange who={item.who} incoming={item.incoming} response={item.response} label="Autom8 AI — sent" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReviewDetail({
-  item, draft, setDraft, busy, error, onApprove, onReject,
-}: {
-  item: ReviewItem; draft: string; setDraft: (v: string) => void; busy: boolean; error: string;
-  onApprove: () => void; onReject: () => void;
-}) {
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-2xl mx-auto space-y-4">
-        <div className="flex items-center justify-between">
-          <ChannelTag kind={item.kind} platform={item.platform} />
-          <span className="text-xs text-text-muted">{fmtTs(item.ts)}</span>
-        </div>
-        <div className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-2.5 text-xs text-warning">{item.reason}</div>
-
-        {/* Incoming message */}
-        <div className="rounded-2xl border border-border bg-surface-elevated p-5">
-          <div className="flex items-start gap-2">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
-              {item.who.replace("@", "").slice(0, 2).toUpperCase()}
-            </div>
-            <div className="flex-1 bg-surface rounded-xl px-3 py-2">
-              <p className="text-xs font-medium text-text-secondary mb-0.5">{item.who}</p>
-              <p className="text-xs text-text-primary whitespace-pre-wrap">{item.incoming || "—"}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Editable response */}
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1.5">
-            Your response {item.kind === "comment" ? "(posts as a public reply)" : "(sends as a DM)"}
-          </label>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={5}
-            placeholder={item.kind === "comment" ? "Write the reply to post…" : "Write the DM to send…"}
-            className="w-full bg-surface border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary outline-none focus:border-primary/40 resize-none"
-          />
-          {item.kind === "comment" && !item.draft && (
-            <p className="text-[11px] text-text-muted mt-1">No AI draft (this was flagged before drafting). Write your reply above.</p>
-          )}
-        </div>
-
-        {error && <div className="rounded-xl border border-error/30 bg-error/5 px-4 py-2.5 text-sm text-error">{error}</div>}
-
-        <div className="flex gap-2">
-          <Button variant="primary" loading={busy} onClick={onApprove} className="flex-1" disabled={!draft.trim()}>
-            ✓ Approve &amp; Send
-          </Button>
-          <Button variant="secondary" onClick={onReject} disabled={busy}>Reject</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyDetail({ icon, text, sub }: { icon: string; text: string; sub: string }) {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-5xl mb-4">{icon}</div>
-        <p className="text-text-secondary font-medium">{text}</p>
-        <p className="text-xs text-text-muted mt-1">{sub}</p>
-      </div>
     </div>
   );
 }

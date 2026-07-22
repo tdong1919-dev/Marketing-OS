@@ -1,129 +1,270 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/service'
-import { createClient } from '@/lib/supabase/server'
-import { cookies } from 'next/headers'
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 
-const X_CLIENT_ID = process.env.X_CLIENT_ID ?? ''
-const X_CLIENT_SECRET = process.env.X_CLIENT_SECRET ?? ''
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.autom8ig.io'
-const REDIRECT_URI = `${APP_URL}/api/social/callback/x`
+import { getAuthContext } from "@/lib/auth";
+import { LOGIN_DISABLED } from "@/lib/auth-mode";
+import { encryptToken } from "@/lib/crypto";
+import { getSiteOrigin } from "@/lib/site-url";
 
-// GET /api/social/callback/x — handle X OAuth 2.0 PKCE callback
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const code = searchParams.get('code')
-  const state = searchParams.get('state')
-  const errorParam = searchParams.get('error')
+export const runtime = "nodejs";
+
+const X_REQUEST_TIMEOUT_MS = 10000;
+const X_TOKEN_URL = "https://api.x.com/2/oauth2/token";
+const X_USER_URL =
+  "https://api.x.com/2/users/me?user.fields=profile_image_url,username,name";
+
+function redirectToAgent(origin: string, agentId: string, reason: string) {
+  return NextResponse.redirect(
+    `${origin}/agents/${agentId}?tab=connections&connect=${reason}`,
+  );
+}
+
+function redirectToAgents(origin: string, reason: string, message?: string) {
+  const params = new URLSearchParams({ connect: reason });
+  if (message) params.set("reason", message.slice(0, 420));
+  return NextResponse.redirect(`${origin}/agents?${params.toString()}`);
+}
+
+function redirectToAgentWithMessage(
+  origin: string,
+  agentId: string,
+  reason: string,
+  message?: string,
+) {
+  const params = new URLSearchParams({ tab: "connections", connect: reason });
+  if (message) params.set("reason", message.slice(0, 420));
+  return NextResponse.redirect(`${origin}/agents/${agentId}?${params.toString()}`);
+}
+
+async function readJson(res: Response) {
+  const text = await res.text();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return { error_description: text.slice(0, 420) };
+  }
+}
+
+async function fetchX(input: string, init?: RequestInit) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), X_REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(
+        "X took too long to respond. Check the X app callback URL and try connecting again.",
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function errorMessage(value: unknown, fallback: string) {
+  if (!value || typeof value !== "object") return fallback;
+  const data = value as Record<string, unknown>;
+  const candidates = [
+    data.error_description,
+    data.detail,
+    data.title,
+    data.error,
+    data.message,
+  ];
+  const message = candidates.find((item) => typeof item === "string");
+  if (!message) return fallback;
+
+  const text = String(message);
+  const normalized = text.toLowerCase();
+  if (
+    normalized.includes("developer app") &&
+    normalized.includes("attached to a project")
+  ) {
+    return "X rejected this token because the developer App is not attached to an X Project. Move or create the App inside an X Project, copy that App's OAuth 2.0 Client ID/Secret to Vercel, then reconnect.";
+  }
+
+  return text;
+}
+
+export async function GET(request: Request) {
+  const origin = getSiteOrigin(request);
+  return handleXCallback(request, origin).catch((error) => {
+    const message = error instanceof Error ? error.message : "X connection failed";
+    return redirectToAgents(origin, "error", message);
+  });
+}
+
+async function handleXCallback(request: Request, origin: string) {
+  const context = await getAuthContext();
+  if (!context) {
+    return NextResponse.redirect(
+      `${origin}${LOGIN_DISABLED ? "/dashboard?connect=session_error" : "/login"}`,
+    );
+  }
+  const { user, supabase } = context;
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const errorParam = url.searchParams.get("error");
 
   if (errorParam) {
-    return NextResponse.redirect(new URL(`/dashboard?social_error=${encodeURIComponent(errorParam)}`, APP_URL))
+    return redirectToAgents(origin, "error", errorParam);
   }
   if (!code || !state) {
-    return NextResponse.redirect(new URL('/dashboard?social_error=missing_params', APP_URL))
+    return redirectToAgents(origin, "error", "X did not return an authorization code.");
   }
 
-  // Read PKCE cookie
-  const cookieStore = await cookies()
-  const pkceRaw = cookieStore.get('x_pkce')?.value
+  const cookieStore = await cookies();
+  const pkceRaw = cookieStore.get("marketing_os_x_pkce")?.value;
   if (!pkceRaw) {
-    return NextResponse.redirect(new URL('/dashboard?social_error=session_expired', APP_URL))
+    return redirectToAgents(
+      origin,
+      "session_error",
+      "X login session expired. Start the connection again from Jidoka Marketing Team OS.",
+    );
   }
 
-  let pkce: { codeVerifier: string; state: string; userId: string }
+  let pkce: {
+    codeVerifier: string;
+    state: string;
+    agentId: string;
+    uid: string;
+  };
   try {
-    pkce = JSON.parse(pkceRaw)
+    pkce = JSON.parse(pkceRaw);
   } catch {
-    return NextResponse.redirect(new URL('/dashboard?social_error=invalid_session', APP_URL))
+    return redirectToAgents(origin, "error", "Could not read the X login session.");
+  }
+  cookieStore.delete("marketing_os_x_pkce");
+
+  if (pkce.state !== state || pkce.uid !== user.id) {
+    return redirectToAgentWithMessage(
+      origin,
+      pkce.agentId,
+      "error",
+      "X login session did not match this Jidoka Marketing Team OS agent.",
+    );
   }
 
-  // Validate state to prevent CSRF
-  if (pkce.state !== state) {
-    return NextResponse.redirect(new URL('/dashboard?social_error=state_mismatch', APP_URL))
+  const { data: agent } = await supabase
+    .from("marketing_os_writing_agents")
+    .select("id")
+    .eq("id", pkce.agentId)
+    .maybeSingle();
+  if (!agent) {
+    return redirectToAgentWithMessage(
+      origin,
+      pkce.agentId,
+      "error",
+      "This writing agent could not be found.",
+    );
   }
-
-  // Clear the PKCE cookie
-  cookieStore.delete('x_pkce')
-
-  // Get userId from session (more authoritative than cookie)
-  const sessionSupabase = await createClient()
-  const { data: { user: sessionUser } } = await sessionSupabase.auth.getUser()
-  const userId = sessionUser?.id ?? pkce.userId
 
   try {
-    // 1. Exchange code for tokens
-    const basicAuth = Buffer.from(`${X_CLIENT_ID}:${X_CLIENT_SECRET}`).toString('base64')
-    const tokenRes = await fetch('https://api.twitter.com/2/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${basicAuth}`,
-      },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: REDIRECT_URI,
-        code_verifier: pkce.codeVerifier,
-      }),
-    })
-
-    const tokenData = await tokenRes.json()
-    console.log('[x-callback] token response:', JSON.stringify(tokenData).slice(0, 200))
-
-    if (!tokenData.access_token) {
-      throw new Error(`No access token: ${JSON.stringify(tokenData)}`)
+    const clientId = process.env.X_CLIENT_ID?.trim() ?? "";
+    const clientSecret = process.env.X_CLIENT_SECRET?.trim() ?? "";
+    if (!clientId) {
+      return redirectToAgentWithMessage(
+        origin,
+        pkce.agentId,
+        "not_configured",
+        "X_CLIENT_ID is required before connecting X.",
+      );
     }
 
-    const accessToken: string = tokenData.access_token
-    const refreshToken: string | null = tokenData.refresh_token ?? null
+    const redirectUri = `${origin}/api/social/callback/x`;
+    const tokenHeaders: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    const tokenBody = new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirectUri,
+      code_verifier: pkce.codeVerifier,
+    });
 
-    // 2. Fetch X user profile
-    const userRes = await fetch('https://api.twitter.com/2/users/me?user.fields=profile_image_url,username', {
-      headers: { 'Authorization': `Bearer ${accessToken}` },
-    })
-    const userData = await userRes.json()
-    const xUser = userData.data ?? {}
-    console.log('[x-callback] x user:', xUser.username ?? 'unknown')
+    if (clientSecret) {
+      const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+      tokenHeaders.Authorization = `Basic ${basicAuth}`;
+    } else {
+      tokenBody.set("client_id", clientId);
+    }
 
-    // 3. Store in Supabase social_accounts
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const svc = createServiceClient() as any
+    const tokenRes = await fetchX(X_TOKEN_URL, {
+      method: "POST",
+      headers: tokenHeaders,
+      body: tokenBody,
+    });
+    const tokenData = await readJson(tokenRes);
+    if (
+      !tokenRes.ok ||
+      typeof tokenData.access_token !== "string" ||
+      !tokenData.access_token
+    ) {
+      throw new Error(errorMessage(tokenData, "X token exchange failed"));
+    }
+    const accessToken = tokenData.access_token;
+    const refreshToken =
+      typeof tokenData.refresh_token === "string" ? tokenData.refresh_token : "";
 
-    const { data: existing } = await svc
-      .from('social_accounts')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('platform', 'x')
-      .maybeSingle()
+    const userRes = await fetchX(X_USER_URL, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const userData = await readJson(userRes);
+    if (!userRes.ok || !userData.data || typeof userData.data !== "object") {
+      throw new Error(errorMessage(userData, "X profile lookup failed"));
+    }
+    const xUser = userData.data as Record<string, unknown>;
+    const tokenPayload = refreshToken ? `${accessToken}||${refreshToken}` : accessToken;
 
-    // Store access_token; append refresh_token with separator so we can split later
-    const tokenPayload = refreshToken
-      ? `${accessToken}||${refreshToken}`
-      : accessToken
-
-    const payload = {
-      user_id: userId,
-      platform: 'x' as const,
-      external_account_id: xUser.id ?? null,
-      page_token_encrypted: tokenPayload,
-      username: xUser.username ?? null,
-      profile_picture_url: xUser.profile_image_url ?? null,
+    const row = {
+      agent_id: pkce.agentId,
+      owner_id: user.id,
+      platform: "x",
+      external_account_id: typeof xUser.id === "string" ? xUser.id : null,
+      username:
+        typeof xUser.username === "string"
+          ? xUser.username
+          : typeof xUser.name === "string"
+            ? xUser.name
+            : null,
+      profile_picture_url:
+        typeof xUser.profile_image_url === "string"
+          ? xUser.profile_image_url
+          : null,
+      access_token_encrypted: encryptToken(accessToken),
+      page_token_encrypted: encryptToken(tokenPayload),
+      token_expires_at: tokenData.expires_in
+        ? new Date(Date.now() + Number(tokenData.expires_in) * 1000).toISOString()
+        : null,
+      status: "active",
       connected_at: new Date().toISOString(),
-      status: 'active',
-    }
+    };
 
-    const { error: upsertError } = existing
-      ? await svc.from('social_accounts').update(payload).eq('id', existing.id)
-      : await svc.from('social_accounts').insert(payload)
+    const { data: existing } = await supabase
+      .from("marketing_os_social_accounts")
+      .select("id")
+      .eq("agent_id", pkce.agentId)
+      .eq("platform", "x")
+      .maybeSingle();
+    const { error } = existing
+      ? await supabase
+          .from("marketing_os_social_accounts")
+          .update(row)
+          .eq("id", existing.id)
+      : await supabase.from("marketing_os_social_accounts").insert(row);
+    if (error) throw error;
 
-    if (upsertError) {
-      console.error('[x-callback] upsert error:', upsertError)
-      throw new Error(`DB save failed: ${JSON.stringify(upsertError)}`)
-    }
-
-    console.log('[x-callback] saved x account for user', userId, '| @', xUser.username)
-    return NextResponse.redirect(new URL('/dashboard?social_connected=true&platform=x', APP_URL))
+    return redirectToAgent(origin, pkce.agentId, "success");
   } catch (err) {
-    console.error('[x-callback] error:', err)
-    return NextResponse.redirect(new URL('/dashboard?social_error=token_exchange_failed', APP_URL))
+    const message = err instanceof Error ? err.message : "x_connect_failed";
+    return redirectToAgentWithMessage(origin, pkce.agentId, "error", message);
   }
 }

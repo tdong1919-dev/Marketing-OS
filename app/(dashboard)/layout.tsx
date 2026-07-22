@@ -1,67 +1,68 @@
-"use client";
-import { useState, useEffect } from "react";
-import { AuthProvider, useAuth } from "@/lib/auth-context";
-import { Sidebar, TopNav } from "@/components/layout";
-import BillingGate from "@/components/billing/BillingGate";
+import { LogOut } from "lucide-react";
 
-function DashboardShell({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, loading } = useAuth();
+import { requireUser } from "@/lib/auth";
+import { signOut } from "@/app/(auth)/actions";
+import { LOGIN_DISABLED } from "@/lib/auth-mode";
+import { Sidebar } from "@/components/sidebar";
+import { Button } from "@/components/ui/button";
+import { HelpChatbot } from "@/components/help-chatbot";
+import { MobileNav } from "@/components/mobile-nav";
+import { ActiveAgentLabel } from "@/components/active-agent-label";
 
-  // Pick up ig_business_id stored during OAuth redirect if user wasn't logged in yet
-  useEffect(() => {
-    const pending = localStorage.getItem("pending_ig_business_id");
-    if (!pending || loading) return;
-    localStorage.removeItem("pending_ig_business_id");
-    fetch("/api/social/mark-connected", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ig_business_id: pending }),
-    }).catch(() => {});
-  }, [loading]);
+export const dynamic = "force-dynamic";
 
-  // Attribute a collaborator referral captured at signup (?ref=CODE), once the
-  // new account has a session. Fire once, then clear regardless of outcome.
-  useEffect(() => {
-    if (loading || !user) return;
-    const ref = localStorage.getItem("collab_ref");
-    if (!ref) return;
-    localStorage.removeItem("collab_ref");
-    fetch("/api/collab/referral", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: ref }),
-    }).catch(() => {});
-  }, [loading, user]);
-
-  const derivedUser = {
-    name: loading
-      ? ""
-      : user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Account",
-    email: loading ? "" : user?.email || "",
-  };
+export default async function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { user, supabase } = await requireUser();
+  const { data: accounts } = await supabase
+    .from("marketing_os_social_accounts")
+    .select("platform, status");
+  const { data: agents } = await supabase
+    .from("marketing_os_writing_agents")
+    .select("id, name, client_id, clients:marketing_os_clients(name)")
+    .order("updated_at", { ascending: false })
+    .limit(50);
+  const activeAgents = (agents ?? []).map((agent) => {
+    const client = agent.clients as unknown as { name?: string } | { name?: string }[] | null;
+    const clientName = Array.isArray(client) ? client[0]?.name : client?.name;
+    return {
+      id: agent.id,
+      name: agent.name,
+      clientId: agent.client_id,
+      clientName: clientName ?? null,
+    };
+  });
+  const latestAgent = activeAgents[0];
 
   return (
-    <div className="flex h-[100dvh] bg-bg overflow-hidden">
-      {/* Blocks the app with an "add a card" prompt once a free trial lapses */}
-      <BillingGate />
-      {/* Desktop sidebar */}
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <TopNav onMenuClick={() => setSidebarOpen(true)} user={derivedUser} />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-4 overscroll-y-contain">
-          {children}
-        </main>
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 items-center justify-between gap-4 border-b bg-card px-4 md:px-6">
+          <MobileNav />
+          <div className="min-w-0 flex-1">
+            <ActiveAgentLabel agents={activeAgents} />
+          </div>
+          {!LOGIN_DISABLED && (
+            <div className="ml-auto flex items-center gap-3">
+              <span className="hidden text-sm text-muted-foreground sm:inline">
+                {user.email}
+              </span>
+              <form action={signOut}>
+                <Button variant="ghost" size="sm" type="submit">
+                  <LogOut className="mr-1 h-4 w-4" />
+                  Sign out
+                </Button>
+              </form>
+            </div>
+          )}
+        </header>
+        <main className="flex-1 overflow-y-auto p-4 md:p-8">{children}</main>
       </div>
+      <HelpChatbot accounts={accounts ?? []} primaryAgentId={latestAgent?.id} />
     </div>
-  );
-}
-
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <AuthProvider>
-      <DashboardShell>{children}</DashboardShell>
-    </AuthProvider>
   );
 }

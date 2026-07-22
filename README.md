@@ -1,134 +1,114 @@
-# Autom8
+# Jidoka Marketing Team OS
 
-AI-powered Instagram & Facebook comment responder for creators, coaches, agencies, and beauty brands. Auto-replies in your brand voice. Review before send or go fully automated.
+An agency marketing operating system that creates **client-specific writing agents** and connects the marketing stack in one place. Each agent can learn a client's voice, knowledge, offers, content history, and channel data, then help generate, schedule, review, and measure marketing work.
 
-**Stack:** Next.js 16 · React 19 · Tailwind CSS v4 · Supabase · Stripe · Vercel
+This is **Phase 1**: one end-to-end vertical slice.
 
----
+> Sign up → create a client → create a writing agent → upload assets → run Voice Intelligence Analysis → generate content with retrieval of the creator's own scripts → QC scoring with automatic rewrite below 90.
 
-## Quick start
+## What works today
 
-```bash
-# 1. Install dependencies
-npm install
+- **Auth** — Supabase email/password, RLS-scoped per user.
+- **Clients & Agents** — full CRUD plus a 3-step agent creation wizard.
+- **Asset ingestion** — upload PDF / DOCX / TXT / CSV / Markdown, paste text, or fetch a URL; text is extracted and stored.
+- **Voice DNA Engine** — Claude extracts six profiles in parallel: Voice DNA, Beliefs, Hook library, Story frameworks, Phrase memory, and a Knowledge graph.
+- **Script embedding search** — uploaded content is chunked and embedded (OpenAI `text-embedding-3-small`) into pgvector for retrieval.
+- **Content generation** — retrieves the 20 closest scripts, generates a primary piece + alternate hooks/CTAs + short/long/organic/sales variants in the creator's voice.
+- **Quality Control Engine** — Claude-as-judge scores ten authenticity dimensions; if the overall score is below 90 the system rewrites once and keeps the better attempt.
 
-# 2. Copy env template and fill in your values
-cp .env.example .env.local
+## Phase 2 — agency operations
 
-# 3. Run the dev server
-npm run dev
-```
+- **Brand Brain** (per agent) — editable business facts (offers, pricing, CTAs, links, FAQs, tone) that augment the auto-extracted Knowledge Graph and feed every generation.
+- **Smart Scheduler** — upload a video/carousel, set a title, and it **auto-matches the generated voice content by TITLE** to fill the caption/script, then schedules it. Generated content now carries an explicit `title` for this.
+- **Calendar** — month view of scheduled posts, color-coded by status.
+- **Analytics** — Recharts dashboards (reach/engagement over time, breakdown, best posting hours) reading `platform_analytics`.
+- **Social integration** — per-agent OAuth connections (`social_accounts`), Meta (Instagram/Facebook) publisher via Graph API, insights fetcher, and Vercel Cron (`/api/cron/publish`, `/api/cron/analytics`). Env-gated: configure the Meta app + `TOKEN_ENCRYPTION_KEY` + `CRON_SECRET` to go live. Production posting requires Meta App Review.
 
-Open [http://localhost:3000](http://localhost:3000).
+Apply `supabase/migrations/0008_scheduler_social.sql` for these features.
 
----
+## Deferred to later phases (UI shows "coming soon")
 
-## Environment variables
+- Revision Learning (the schema exists; the learning loop is not wired yet)
+- Multi-writer blending
+- YouTube / X / TikTok / LinkedIn publishing depth varies by API approval; Meta, YouTube, X, and Mailchimp connection routes exist.
 
-Copy `.env.example` to `.env.local` and fill in each value. The app runs on mock data without real credentials, but auth, billing, and social connection require live keys.
+## Tech stack
 
-| Variable | Where to get it |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API |
-| `STRIPE_SECRET_KEY` | Stripe Dashboard → API Keys |
-| `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → Webhooks |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe Dashboard → API Keys |
-| `STRIPE_STARTER_PRICE_ID` | Stripe Dashboard → Products |
-| `STRIPE_GROWTH_PRICE_ID` | Stripe Dashboard → Products |
-| `STRIPE_SCALE_PRICE_ID` | Stripe Dashboard → Products |
-| `META_APP_ID` | Meta for Developers → App Dashboard |
-| `META_APP_SECRET` | Meta for Developers → App Dashboard |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` locally, your Vercel URL in prod |
+Next.js 16 (App Router) · TypeScript · Tailwind v4 · ShadCN UI · Supabase (Postgres + pgvector + Auth + Storage + RLS) · Claude (`@anthropic-ai/sdk`) · OpenAI embeddings · zod.
 
----
-
-## Scripts
-
-```bash
-npm run dev      # Start dev server (localhost:3000)
-npm run build    # Production build + type-check
-npm run start    # Start production server (after build)
-npm run lint     # ESLint
-```
-
----
-
-## Deploy to Vercel
-
-### One-click
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
-
-### Manual
-
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Link and deploy
-vercel --prod
-```
-
-Set all variables from `.env.example` in **Vercel → Project → Settings → Environment Variables** before deploying.
-
-### Stripe webhook
-
-After deploying, register a webhook in the Stripe Dashboard pointing to:
-
-```
-https://your-app.vercel.app/api/billing/webhook
-```
-
-Events to enable: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`
-
-Copy the webhook signing secret into `STRIPE_WEBHOOK_SECRET`.
-
----
-
-## Supabase setup
-
-1. Create a project at [supabase.com](https://supabase.com).
-2. Run the migration in `supabase/schema.sql` via the SQL editor.
-3. Enable Email auth in **Authentication → Providers**.
-4. Add your Vercel URL to **Authentication → URL Configuration → Redirect URLs**: `https://your-app.vercel.app/auth/callback`
-
----
-
-## Meta (Instagram/Facebook) setup
-
-> Instagram connection is a placeholder in v1 — Meta App Review is required before live use.
-
-1. Create an app at [developers.facebook.com](https://developers.facebook.com).
-2. Add **Instagram Basic Display** and **Pages** products.
-3. Request permissions: `instagram_basic`, `instagram_manage_comments`, `pages_read_engagement`.
-4. Set OAuth redirect URI to: `https://your-app.vercel.app/api/social/callback`
-
----
-
-## Project structure
+## Architecture
 
 ```
 app/
-  (dashboard)/          # Authenticated app shell
-    dashboard/          # Overview + metrics
-    inbox/              # AI reply review queue
-    settings/           # Brand Brain config
-    billing/            # Plans + Stripe checkout
-    onboarding/         # 4-step setup wizard
-    analytics/          # Usage charts
-  api/                  # Route handlers (Supabase + Stripe + Meta)
-  auth/callback/        # Supabase OAuth redirect handler
-  login/ signup/        # Auth pages
-components/
-  ui/                   # Design system components
-  layout/               # Sidebar, TopNav, MobileBottomNav
+  (auth)/                  login, signup, auth actions
+  (dashboard)/             sidebar shell + all pages
+    agents/[id]/           agent detail: Assets · Voice DNA · Generate · History
+    generated/[id]/        generated piece + QC scores
+  api/
+    assets/upload/         file/url/paste → extract → store
+    agents/[id]/analyze/   6-engine analysis + embeddings
+    agents/[id]/generate/  retrieval → generation → QC → persist
 lib/
-  actions/              # Server actions (brand, inbox, usage)
-  mock-data.ts          # Dev/demo data
-  supabase/             # Supabase client helpers
-  types/                # TypeScript types + database schema types
-supabase/
-  schema.sql            # Database schema
+  supabase/                client / server / admin / proxy helpers + Database type
+  ai/                      anthropic, embeddings, analysis, generate
+  schemas/                 zod + JSON Schema for every structured output
+  extract/                 pdf / docx / txt / csv / url text extraction
+supabase/migrations/       0001–0007 SQL (schema, RLS, functions, storage)
 ```
+
+## Setup
+
+### 1. Install
+
+```bash
+npm install
+```
+
+### 2. Connect Supabase
+
+Use a dedicated Supabase project when possible. The existing `brkfree_` tables remain for compatibility while the parallel `marketing_os_` tables are introduced.
+
+### 3. Environment
+
+```bash
+cp .env.example .env.local
+```
+
+Fill in:
+
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — from the new project's Settings → API
+- `ANTHROPIC_API_KEY` — Claude (analysis, generation, QC)
+- `OPENAI_API_KEY` — embeddings
+
+### 4. Apply the database schema
+
+Apply the migrations in order (0001 → 0007). The simplest path is the project's **SQL editor**: paste the contents of each file in `supabase/migrations/` in numeric order and run.
+
+If you use the Supabase CLI, run `supabase init` once (it keeps the existing `supabase/migrations/`), then `supabase link --project-ref <ref>` and `supabase db push`.
+
+Either way this enables `pgvector`, creates all tables, RLS policies, the `match_scripts` retrieval function, and the private `assets` storage bucket.
+
+### 5. Run
+
+```bash
+npm run dev
+```
+
+Open http://localhost:3000, sign up, and walk the flow.
+
+## Verification checklist
+
+- `npm run build` and `npm run lint` are clean.
+- Sign up → create a client → create an agent.
+- Upload a sample script (or paste one) → it shows as `extracted`.
+- Run Voice Intelligence Analysis → agent becomes `ready`, the Voice DNA tab populates.
+- Generate content → redirected to the piece with an authenticity score; retrieval used the uploaded scripts.
+- A second user cannot see the first user's agents or content (RLS).
+
+## Scripts
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Local dev server |
+| `npm run build` | Production build + typecheck |
+| `npm run lint` | ESLint |

@@ -1,0 +1,70 @@
+import { revalidatePath } from "next/cache";
+import { NextResponse } from "next/server";
+
+import { getAuthContext } from "@/lib/auth";
+
+export const runtime = "nodejs";
+
+export async function POST(request: Request) {
+  let context: Awaited<ReturnType<typeof getAuthContext>>;
+
+  try {
+    context = await getAuthContext();
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not start the demo session.",
+      },
+      { status: 500 },
+    );
+  }
+
+  if (!context) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { user, supabase } = context;
+  const formData = await request.formData().catch(() => new FormData());
+  const name = String(formData.get("name") ?? "").trim();
+  const industry = String(formData.get("industry") ?? "").trim() || null;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+
+  if (!name) {
+    return NextResponse.json({ error: "Client name is required." }, { status: 400 });
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("marketing_os_clients")
+    .select("id")
+    .eq("owner_id", user.id)
+    .ilike("name", name)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 500 });
+  }
+  if (existing?.id) {
+    return NextResponse.json({ id: existing.id, existing: true });
+  }
+
+  const { data, error } = await supabase
+    .from("marketing_os_clients")
+    .insert({ owner_id: user.id, name, industry, notes })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    return NextResponse.json(
+      { error: error?.message ?? "Could not create client." },
+      { status: 500 },
+    );
+  }
+
+  revalidatePath("/clients");
+  revalidatePath("/dashboard");
+  return NextResponse.json({ id: data.id, existing: false });
+}

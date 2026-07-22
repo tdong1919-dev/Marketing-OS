@@ -1,16 +1,12 @@
 import { createBrowserClient } from "@supabase/ssr";
 
+import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/env";
+import type { Database } from "@/lib/supabase/types";
+
+/**
+ * Supabase client for use in Client Components (browser).
+ * Uses the public anon key; all access is governed by RLS.
+ */
 export function createClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
-  }
-
-  if (!supabaseAnonKey) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  }
-
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient<Database>(supabaseUrl(), supabaseAnonKey());
 }

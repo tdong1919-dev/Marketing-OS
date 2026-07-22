@@ -1,0 +1,199 @@
+import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
+
+import { getAuthContext } from "@/lib/auth";
+import { embedQuery, toVectorLiteral } from "@/lib/ai/embeddings";
+import { runGeneration, type GenerationRequest, type DnaInput } from "@/lib/ai/generate";
+import { CLAUDE_MODEL } from "@/lib/ai/anthropic";
+import { buildBrandBrainBrief } from "@/lib/brand-brain";
+import type { BrandBrain } from "@/lib/supabase/types";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+const MATCH_COUNT = 6;
+
+type ScriptMatch = {
+  id: string;
+  content: string;
+};
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: agentId } = await params;
+  const context = await getAuthContext();
+  if (!context) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { user, supabase } = context;
+
+  const { data: agent } = await supabase
+    .from("marketing_os_writing_agents")
+    .select("id, status")
+    .eq("id", agentId)
+    .maybeSingle();
+  if (!agent) {
+    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+  }
+
+  const body = (await request.json().catch(() => ({}))) as Partial<GenerationRequest>;
+  const topic = String(body.topic ?? "").trim();
+  if (!topic) {
+    return NextResponse.json({ error: "Topic is required" }, { status: 400 });
+  }
+  const req: GenerationRequest = {
+    topic,
+    title: body.title?.trim() || topic,
+    goal: body.goal?.trim() || undefined,
+    platform: body.platform?.trim() || undefined,
+    audience: body.audience?.trim() || undefined,
+    offer: body.offer?.trim() || undefined,
+    cta: body.cta?.trim() || undefined,
+    length: body.length?.trim() || undefined,
+    notes: body.notes?.trim() || undefined,
+  };
+
+  // Require an analyzed agent (Voice DNA present).
+  const { data: voice } = await supabase
+    .from("marketing_os_voice_profiles")
+    .select("agent_id")
+    .eq("agent_id", agentId)
+    .maybeSingle();
+  if (!voice) {
+    return NextResponse.json(
+      { error: "Analyze this agent before generating content." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    // 1) Retrieve the closest matching scripts via pgvector, then fall back to
+    // recent chunks so generation still works if embeddings are unavailable.
+    const queryText = [req.topic, req.goal, req.notes].filter(Boolean).join(" — ");
+    let matches: ScriptMatch[] = [];
+
+    try {
+      const queryEmbedding = await embedQuery(queryText);
+      const { data } = await supabase.rpc("marketing_os_match_scripts", {
+        p_agent_id: agentId,
+        p_query_embedding: toVectorLiteral(queryEmbedding),
+        p_match_count: MATCH_COUNT,
+      });
+      matches = ((data ?? []) as ScriptMatch[]).filter((match) =>
+        Boolean(match.content?.trim()),
+      );
+    } catch (error) {
+      console.warn(
+        "Generation retrieval fallback used:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+
+    if (matches.length === 0) {
+      const { data: recentScripts } = await supabase
+        .from("marketing_os_uploaded_scripts")
+        .select("id, content")
+        .eq("agent_id", agentId)
+        .order("created_at", { ascending: false })
+        .limit(MATCH_COUNT);
+      matches = ((recentScripts ?? []) as ScriptMatch[]).filter((match) =>
+        Boolean(match.content?.trim()),
+      );
+    }
+
+    const exemplars = matches.map((m) => m.content);
+    const retrievedIds = matches.map((m) => m.id);
+
+    // 2) Load DNA profiles.
+    const [v, b, h, s, p, k] = await Promise.all([
+      supabase.from("marketing_os_voice_profiles").select("*").eq("agent_id", agentId).maybeSingle(),
+      supabase.from("marketing_os_belief_profiles").select("*").eq("agent_id", agentId).maybeSingle(),
+      supabase.from("marketing_os_hook_libraries").select("*").eq("agent_id", agentId).maybeSingle(),
+      supabase.from("marketing_os_story_frameworks").select("*").eq("agent_id", agentId).maybeSingle(),
+      supabase.from("marketing_os_phrase_libraries").select("*").eq("agent_id", agentId).maybeSingle(),
+      supabase.from("marketing_os_knowledge_graphs").select("*").eq("agent_id", agentId).maybeSingle(),
+    ]);
+    const dna: DnaInput = {
+      voice: v.data as unknown as DnaInput["voice"],
+      belief: b.data as unknown as DnaInput["belief"],
+      hooks: h.data as unknown as DnaInput["hooks"],
+      story: s.data as unknown as DnaInput["story"],
+      phrase: p.data as unknown as DnaInput["phrase"],
+      knowledge: k.data as unknown as DnaInput["knowledge"],
+    };
+
+    // 2b) Load the per-agent authoritative business facts.
+    const { data: brain } = await supabase
+      .from("marketing_os_brand_brains")
+      .select("*")
+      .eq("agent_id", agentId)
+      .maybeSingle();
+    const brandBrief = buildBrandBrainBrief((brain as BrandBrain) ?? null);
+
+    // 3) Generate + QC (with one auto-rewrite below threshold).
+    const result = await runGeneration(req, dna, exemplars, brandBrief);
+
+    // 4) Persist.
+    const { data: inserted, error: insertError } = await supabase
+      .from("marketing_os_generated_content")
+      .insert({
+        agent_id: agentId,
+        owner_id: user.id,
+        title: req.title ?? req.topic,
+        topic: req.topic,
+        goal: req.goal ?? null,
+        platform: req.platform ?? null,
+        audience: req.audience ?? null,
+        offer: req.offer ?? null,
+        cta: req.cta ?? null,
+        length: req.length ?? null,
+        notes: req.notes ?? null,
+        primary_script: result.content.primary_script,
+        alternate_hooks: result.content.alternate_hooks,
+        alternate_ctas: result.content.alternate_ctas,
+        short_version: result.content.short_version,
+        long_version: result.content.long_version,
+        organic_version: result.content.organic_version,
+        sales_version: result.content.sales_version,
+        retrieved_script_ids: retrievedIds,
+        overall_score: result.score.overall,
+        below_threshold: result.belowThreshold,
+        attempts: result.attempts,
+        model: CLAUDE_MODEL,
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !inserted) {
+      throw new Error(insertError?.message ?? "Could not save content");
+    }
+
+    const { error: scoreError } = await supabase.from("marketing_os_quality_scores").insert({
+      generated_content_id: inserted.id,
+      owner_id: user.id,
+      voice_match: result.score.voice_match,
+      syntax_match: result.score.syntax_match,
+      hook_match: result.score.hook_match,
+      story_match: result.score.story_match,
+      belief_match: result.score.belief_match,
+      emotional_match: result.score.emotional_match,
+      phrase_match: result.score.phrase_match,
+      brand_accuracy: result.score.brand_accuracy,
+      knowledge_accuracy: result.score.knowledge_accuracy,
+      overall: result.score.overall,
+      attempt: result.attempts,
+      rationale: result.score.rationale,
+    });
+    if (scoreError) throw new Error(scoreError.message);
+
+    revalidatePath("/generated");
+    revalidatePath("/dashboard");
+
+    return NextResponse.json({ id: inserted.id, overall: result.score.overall });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Generation failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

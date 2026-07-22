@@ -1,99 +1,127 @@
-/**
- * GET /api/social/youtube/callback
- * Exchanges the Google OAuth code for tokens, looks up the channel, and stores
- * the refresh token in social_accounts (platform 'youtube') for the publisher.
- */
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/service'
+import { NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? `https://${request.headers.get('host')}`
-  const { searchParams } = new URL(request.url)
-  const code = searchParams.get('code')
-  const state = searchParams.get('state')
-  const errorParam = searchParams.get('error')
+import { encryptToken } from "@/lib/crypto";
+import { getAuthContext } from "@/lib/auth";
+import { LOGIN_DISABLED } from "@/lib/auth-mode";
+import { getSiteOrigin } from "@/lib/site-url";
 
+export const runtime = "nodejs";
+
+function redirectToAgent(origin: string, agentId: string, reason: string) {
+  return NextResponse.redirect(
+    `${origin}/agents/${agentId}?tab=connections&connect=${reason}`,
+  );
+}
+
+export async function GET(request: Request) {
+  const origin = getSiteOrigin(request);
+  const context = await getAuthContext();
+  if (!context) {
+    return NextResponse.redirect(
+      `${origin}${LOGIN_DISABLED ? "/dashboard?connect=session_error" : "/login"}`,
+    );
+  }
+  const { user, supabase } = context;
+
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const stateRaw = url.searchParams.get("state");
+  const errorParam = url.searchParams.get("error");
   if (errorParam) {
-    return NextResponse.redirect(new URL(`/scheduler?yt_error=${encodeURIComponent(errorParam)}`, appUrl))
+    return NextResponse.redirect(
+      `${origin}/agents?tab=connections&connect=error&reason=${encodeURIComponent(errorParam)}`,
+    );
   }
-  if (!code) {
-    return NextResponse.redirect(new URL('/scheduler?yt_error=missing_code', appUrl))
+  if (!code || !stateRaw) {
+    return NextResponse.redirect(`${origin}/agents?connect=error`);
   }
 
-  // Prefer the logged-in user; fall back to the state we set on connect.
-  const sessionSupabase = await createClient()
-  const { data: { user } } = await sessionSupabase.auth.getUser()
-  const userId = user?.id ?? state
-  if (!userId) {
-    return NextResponse.redirect(new URL('/scheduler?yt_error=no_user', appUrl))
+  let state: { agent_id: string; uid: string };
+  try {
+    state = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf8"));
+  } catch {
+    return NextResponse.redirect(`${origin}/agents?connect=error`);
   }
+  if (state.uid !== user.id) {
+    return redirectToAgent(origin, state.agent_id, "error");
+  }
+
+  const { data: agent } = await supabase
+    .from("marketing_os_writing_agents")
+    .select("id")
+    .eq("id", state.agent_id)
+    .maybeSingle();
+  if (!agent) return redirectToAgent(origin, state.agent_id, "error");
 
   try {
-    const redirectUri = `${appUrl}/api/social/youtube/callback`
-
-    // 1. Exchange code for tokens.
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    const redirectUri = `${origin}/api/social/youtube/callback`;
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         code,
-        client_id: process.env.GOOGLE_CLIENT_ID ?? '',
-        client_secret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+        client_id: process.env.GOOGLE_CLIENT_ID ?? "",
+        client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
         redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
+        grant_type: "authorization_code",
       }),
-    })
-    const tokens = await tokenRes.json()
+    });
+    const tokens = await tokenRes.json();
+    if (!tokenRes.ok || !tokens.access_token) {
+      throw new Error(tokens.error_description ?? "Google token exchange failed");
+    }
     if (!tokens.refresh_token) {
-      // Google only returns a refresh token on first consent; prompt=consent forces it.
-      return NextResponse.redirect(new URL('/scheduler?yt_error=no_refresh_token', appUrl))
+      throw new Error("Google did not return a refresh token. Try connecting again.");
     }
 
-    // 2. Identify the channel.
-    const chanRes = await fetch(
-      'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
-      { headers: { Authorization: `Bearer ${tokens.access_token}` } }
-    )
-    const chan = await chanRes.json()
-    const channel = chan.items?.[0]
-    const channelId = channel?.id ?? null
-    const channelTitle = channel?.snippet?.title ?? null
+    const channelRes = await fetch(
+      "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+      { headers: { Authorization: `Bearer ${tokens.access_token}` } },
+    );
+    const channelJson = await channelRes.json();
+    const channel = channelJson.items?.[0];
+    const channelId = channel?.id ?? null;
+    const channelTitle = channel?.snippet?.title ?? null;
+    const profilePictureUrl =
+      channel?.snippet?.thumbnails?.default?.url ??
+      channel?.snippet?.thumbnails?.medium?.url ??
+      null;
 
-    // 3. Store the refresh token in social_accounts (platform 'youtube').
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const svc = createServiceClient() as any
-    const { data: existing } = await svc
-      .from('social_accounts')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('platform', 'youtube')
-      .maybeSingle()
-
-    const payload = {
-      user_id: userId,
-      platform: 'youtube',
+    const row = {
+      agent_id: state.agent_id,
+      owner_id: user.id,
+      platform: "youtube",
       external_account_id: channelId,
-      // social_accounts stores tokens in page_token_encrypted (the column that
-      // exists in the DB); for YouTube this holds the OAuth refresh token.
-      page_token_encrypted: tokens.refresh_token,
       username: channelTitle,
+      profile_picture_url: profilePictureUrl,
+      access_token_encrypted: encryptToken(tokens.access_token),
+      page_token_encrypted: encryptToken(tokens.refresh_token),
+      token_expires_at: tokens.expires_in
+        ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString()
+        : null,
+      status: "active",
       connected_at: new Date().toISOString(),
-      status: 'active',
-    }
+    };
 
-    const { error: saveError } = existing
-      ? await svc.from('social_accounts').update(payload).eq('id', existing.id)
-      : await svc.from('social_accounts').insert(payload)
+    const { data: existing } = await supabase
+      .from("marketing_os_social_accounts")
+      .select("id")
+      .eq("agent_id", state.agent_id)
+      .eq("platform", "youtube")
+      .maybeSingle();
+    const { error } = existing
+      ? await supabase
+          .from("marketing_os_social_accounts")
+          .update(row)
+          .eq("id", existing.id)
+      : await supabase.from("marketing_os_social_accounts").insert(row);
+    if (error) throw error;
 
-    if (saveError) {
-      console.error('[youtube callback] save failed:', saveError)
-      return NextResponse.redirect(new URL('/scheduler?yt_error=save_failed', appUrl))
-    }
-
-    return NextResponse.redirect(new URL('/scheduler?yt=connected', appUrl))
+    return redirectToAgent(origin, state.agent_id, "success");
   } catch (err) {
-    console.error('[youtube callback]', err)
-    return NextResponse.redirect(new URL('/scheduler?yt_error=exchange_failed', appUrl))
+    const message = err instanceof Error ? err.message : "youtube_connect_failed";
+    return NextResponse.redirect(
+      `${origin}/agents/${state.agent_id}?tab=connections&connect=error&reason=${encodeURIComponent(message)}`,
+    );
   }
 }
