@@ -4,6 +4,12 @@
 [build.environment]
   NODE_VERSION = "20"
 
+[functions]
+  included_files = [
+    "node_modules/next/dist/**",
+    "node_modules/next/package.json"
+  ]
+
 [[headers]]
   for = "/*"
   [headers.values]
